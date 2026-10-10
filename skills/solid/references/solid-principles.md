@@ -2,40 +2,41 @@
 
 ## Overview
 
-SOLID helps structure software to be flexible, maintainable, and testable. These principles reduce coupling and increase cohesion.
+SOLID helps structure software to be flexible, maintainable, and testable. These principles reduce coupling and increase cohesion. On Android they map directly onto the official architecture: ViewModels, use cases, repositories, and data sources each with one job, connected through abstractions.
 
 ## S - Single Responsibility Principle (SRP)
 
 > "A class should have one, and only one, reason to change."
 
 ### Problem It Solves
-God objects that do everything - hard to test, hard to change, hard to understand.
+God objects that do everything - hard to test, hard to change, hard to understand. On Android the classic example is the **God Activity/Fragment** or a ViewModel that talks to the database, the network, and formats text.
 
 ### How to Apply
 Each class handles ONE responsibility. If you find yourself saying "and" when describing what a class does, split it.
 
-```typescript
+```kotlin
 // BAD: Multiple responsibilities
-class Order {
-  calculateTotal(): number { ... }
-  saveToDatabase(): void { ... }    // Persistence
-  generateInvoice(): string { ... } // Presentation
+class OrderViewModel(private val database: AppDatabase, private val api: OrderApi) : ViewModel() {
+    fun calculateTotal(items: List<OrderItem>): Money { /* business rule */ }
+    fun saveOrder(order: Order) { /* persistence + network sync */ }
+    fun formatInvoice(order: Order): String { /* presentation */ }
 }
 
 // GOOD: Single responsibility each
-class Order {
-  private items: OrderItem[] = [];
-
-  addItem(item: OrderItem): void { ... }
-  calculateTotal(): number { ... }
+data class Order(val id: OrderId, val items: List<OrderItem>) {
+    val total: Money get() = items.fold(Money.ZERO) { sum, item -> sum + item.price }
 }
 
-class OrderRepository {
-  save(order: Order): Promise<void> { ... }
+interface OrderRepository {
+    suspend fun saveOrder(order: Order)
 }
 
-class InvoiceGenerator {
-  generate(order: Order): Invoice { ... }
+class PlaceOrderUseCase(private val orderRepository: OrderRepository) {
+    suspend operator fun invoke(order: Order) = orderRepository.saveOrder(order)
+}
+
+class OrderViewModel(private val placeOrder: PlaceOrderUseCase) : ViewModel() {
+    // turns user events into UI state - nothing else
 }
 ```
 
@@ -43,6 +44,7 @@ class InvoiceGenerator {
 - Does this class have multiple reasons to change?
 - Can I describe it without using "and"?
 - Would different stakeholders request changes to different parts?
+- Does this Activity/Fragment contain logic beyond rendering and forwarding events?
 
 ---
 
@@ -54,45 +56,42 @@ class InvoiceGenerator {
 Having to modify existing, tested code every time requirements change. Risk of breaking working features.
 
 ### How to Apply
-Design abstractions that allow new behavior through new classes, not edits to existing ones.
+Design abstractions that allow new behavior through new types, not edits to existing ones.
 
-```typescript
+```kotlin
 // BAD: Must modify to add new shipping
 class ShippingCalculator {
-  calculate(type: string, value: number): number {
-    if (type === 'standard') return value < 50 ? 5 : 0;
-    if (type === 'express') return 15;
-    // Must add more ifs for new types!
-  }
+    fun calculate(type: String, orderValue: Money): Money = when (type) {
+        "standard" -> if (orderValue < FREE_SHIPPING_THRESHOLD) Money.of(5) else Money.ZERO
+        "express" -> Money.of(15)
+        else -> throw IllegalArgumentException("Unknown type: $type") // must add more branches!
+    }
 }
 
 // GOOD: Open for extension
-interface ShippingMethod {
-  calculateCost(orderValue: number): number;
+fun interface ShippingMethod {
+    fun calculateCost(orderValue: Money): Money
 }
 
-class StandardShipping implements ShippingMethod {
-  calculateCost(orderValue: number): number {
-    return orderValue < 50 ? 5 : 0;
-  }
+class StandardShipping : ShippingMethod {
+    override fun calculateCost(orderValue: Money): Money =
+        if (orderValue < FREE_SHIPPING_THRESHOLD) Money.of(5) else Money.ZERO
 }
 
-class ExpressShipping implements ShippingMethod {
-  calculateCost(orderValue: number): number {
-    return 15;
-  }
+class ExpressShipping : ShippingMethod {
+    override fun calculateCost(orderValue: Money): Money = Money.of(15)
 }
 
-// Add new shipping by creating new class, not modifying existing
-class SameDayShipping implements ShippingMethod {
-  calculateCost(orderValue: number): number {
-    return 25;
-  }
+// Add new shipping by creating a new class, not modifying existing ones
+class SameDayShipping : ShippingMethod {
+    override fun calculateCost(orderValue: Money): Money = Money.of(25)
 }
 ```
 
+**`sealed` vs `interface`:** a `sealed` hierarchy with an exhaustive `when` is the right choice when the set of cases is closed and owned by you (UI states, results) - the compiler then lists every place to update. Use an `interface` when new implementations should be addable without touching existing code.
+
 ### Architectural Insight
-OCP at architecture level means: **design your codebase so new features are added by adding code, not changing existing code.**
+OCP at architecture level means: **design your codebase so new features are added by adding code (a new feature module, a new data source), not changing existing code.**
 
 ---
 
@@ -101,39 +100,31 @@ OCP at architecture level means: **design your codebase so new features are adde
 > "Subtypes must be substitutable for their base types without altering program correctness."
 
 ### Problem It Solves
-Subclasses that break expectations, requiring type-checking and special cases.
+Implementations that break expectations, requiring type checks and special cases.
 
 ### How to Apply
-Subclasses must honor the contract of the parent. If the parent returns positive numbers, subclasses cannot return negatives.
+Implementations must honor the contract of the abstraction. If the contract says "returns a non-negative discount", no implementation may return a negative one.
 
-```typescript
-// BAD: Violates parent's contract
-class DiscountPolicy {
-  getDiscount(value: number): number {
-    return 0; // Non-negative expected
-  }
+```kotlin
+// BAD: Violates the contract
+open class DiscountPolicy {
+    open fun getDiscount(orderValue: Money): Money = Money.ZERO // non-negative expected
 }
 
-class WeirdDiscount extends DiscountPolicy {
-  getDiscount(value: number): number {
-    return -5; // Increases cost! Breaks expectations
-  }
+class WeirdDiscount : DiscountPolicy() {
+    override fun getDiscount(orderValue: Money): Money = Money.of(-5) // increases cost!
 }
 
-// GOOD: Enforces contract
-class DiscountPolicy {
-  constructor(private discount: number) {
-    if (discount < 0) throw new Error("Discount must be non-negative");
-  }
+// GOOD: The contract is enforced
+class DiscountPolicy(private val discount: Money) {
+    init { require(discount >= Money.ZERO) { "Discount must be non-negative" } }
 
-  getDiscount(): number {
-    return this.discount;
-  }
+    fun getDiscount(): Money = discount
 }
 ```
 
 ### Key Insight
-This is why you can swap `InMemoryUserRepo` for `PostgresUserRepo` - they both honor the `UserRepo` interface contract.
+This is why you can swap `OfflineFirstNewsRepository` for `FakeNewsRepository` in tests - both honor the `NewsRepository` contract. Contract tests (see [testing.md](testing.md)) prove it.
 
 ---
 
@@ -142,45 +133,39 @@ This is why you can swap `InMemoryUserRepo` for `PostgresUserRepo` - they both h
 > "Clients should not be forced to depend on methods they do not use."
 
 ### Problem It Solves
-Fat interfaces that force partial implementations, empty methods, or throws.
+Fat interfaces that force partial implementations, empty methods, or `TODO()`s.
 
 ### How to Apply
 Split large interfaces into smaller, cohesive ones. Clients depend only on what they need.
 
-```typescript
+```kotlin
 // BAD: Fat interface
-interface WarehouseDevice {
-  printLabel(orderId: string): void;
-  scanBarcode(): string;
-  packageItem(orderId: string): void;
+interface MediaDevice {
+    fun playAudio(track: Track)
+    fun recordVideo(): Video
+    fun castToTv(media: Media)
 }
 
-class BasicPrinter implements WarehouseDevice {
-  printLabel(orderId: string): void { /* works */ }
-  scanBarcode(): string { throw new Error("Not supported"); } // Forced!
-  packageItem(orderId: string): void { throw new Error("Not supported"); }
+class BasicSpeaker : MediaDevice {
+    override fun playAudio(track: Track) { /* works */ }
+    override fun recordVideo(): Video = throw UnsupportedOperationException() // forced!
+    override fun castToTv(media: Media) = throw UnsupportedOperationException()
 }
 
 // GOOD: Segregated interfaces
-interface LabelPrinter {
-  printLabel(orderId: string): void;
-}
+interface AudioPlayer { fun playAudio(track: Track) }
+interface VideoRecorder { fun recordVideo(): Video }
+interface TvCaster { fun castToTv(media: Media) }
 
-interface BarcodeScanner {
-  scanBarcode(): string;
-}
-
-interface ItemPackager {
-  packageItem(orderId: string): void;
-}
-
-class BasicPrinter implements LabelPrinter {
-  printLabel(orderId: string): void { /* only what it does */ }
+class BasicSpeaker : AudioPlayer {
+    override fun playAudio(track: Track) { /* only what it does */ }
 }
 ```
 
+On Android this also applies to repositories: a screen that only reads user settings shouldn't depend on a repository interface with 20 write methods.
+
 ### Detection
-If you see `throw new Error("Not implemented")` or empty method bodies, the interface is too fat.
+If you see `TODO()`, `throw UnsupportedOperationException()`, or empty overrides, the interface is too fat.
 
 ---
 
@@ -189,65 +174,69 @@ If you see `throw new Error("Not implemented")` or empty method bodies, the inte
 > "High-level modules should not depend on low-level modules. Both should depend on abstractions."
 
 ### Problem It Solves
-Tight coupling to specific implementations (databases, APIs, frameworks). Hard to test, hard to swap.
+Tight coupling to specific implementations (database, HTTP client, SDKs, Android framework). Hard to test, hard to swap.
 
 ### How to Apply
-Depend on interfaces, inject implementations.
+Depend on abstractions and receive implementations through the **constructor**.
 
-```typescript
-// BAD: Direct dependency on concrete class
-class OrderService {
-  private emailService = new SendGridEmailService(); // Locked in!
+```kotlin
+// BAD: Creates its own concrete dependency
+class CheckoutViewModel : ViewModel() {
+    private val paymentGateway = StripePaymentGateway() // locked in, untestable
 
-  confirmOrder(email: string): void {
-    this.emailService.send(email, "Order confirmed");
-  }
+    fun pay(amount: Money) {
+        viewModelScope.launch { paymentGateway.charge(amount) }
+    }
 }
 
-// GOOD: Depend on abstraction
-interface EmailService {
-  send(to: string, message: string): void;
+// GOOD: Depends on an abstraction, injected through the constructor
+interface PaymentGateway {
+    suspend fun charge(amount: Money): ChargeResult
 }
 
-class OrderService {
-  constructor(private emailService: EmailService) {}
-
-  confirmOrder(email: string): void {
-    this.emailService.send(email, "Order confirmed");
-  }
+class CheckoutViewModel(
+    private val paymentGateway: PaymentGateway,
+) : ViewModel() {
+    fun pay(amount: Money) {
+        viewModelScope.launch { paymentGateway.charge(amount) }
+    }
 }
-
-// Now can inject any implementation
-new OrderService(new SendGridEmailService());
-new OrderService(new SESEmailService());
-new OrderService(new MockEmailService()); // For tests!
 ```
+
+The class doesn't know **how** it's built. The same class works with any DI approach - use the one the project already has (Hilt, Koin, manual DI); for a new project, ask the user:
+
+```kotlin
+// Manual DI
+CheckoutViewModel(paymentGateway = StripePaymentGateway(httpClient))
+
+// Tests
+CheckoutViewModel(paymentGateway = FakePaymentGateway())
+```
+
+Inject dispatchers and coroutine scopes the same way (see [coroutines-flow.md](coroutines-flow.md)).
 
 ### The Dependency Rule
-Source code dependencies should point **inward** toward high-level policies (domain logic), never toward low-level details (infrastructure).
+Source code dependencies point from the UI toward the data layer, and from details toward abstractions:
 
 ```
-Infrastructure → Application → Domain
-      ↑              ↑            ↑
-    (outer)       (middle)     (inner)
+UI layer  →  Domain layer (optional)  →  Data layer
+(Compose/Views, ViewModels)   (use cases)    (repositories → data sources)
 
-Dependencies flow: outer → inner
-Never: inner → outer
+The data layer never depends on the UI layer.
+ViewModels and use cases never depend on data sources directly.
 ```
 
 ---
 
 ## Applying SOLID at Architecture Level
 
-These principles scale beyond classes:
-
-| Principle | Architecture Application |
-|-----------|--------------------------|
-| SRP | Each bounded context has one responsibility |
-| OCP | New features = new modules, not edits to existing |
-| LSP | Microservices with same contract are substitutable |
-| ISP | Thin interfaces between services |
-| DIP | High-level business logic doesn't know about databases/frameworks |
+| Principle | Android Architecture Application |
+|-----------|----------------------------------|
+| SRP | Each module/feature has one responsibility; each layer has one job |
+| OCP | New features = new feature modules, not edits to existing ones |
+| LSP | Repository implementations (offline-first, in-memory, fake) are interchangeable |
+| ISP | Small repository/data source interfaces tailored to their clients |
+| DIP | ViewModels and use cases don't know about databases, HTTP clients, or SDKs |
 
 ---
 
@@ -255,8 +244,8 @@ These principles scale beyond classes:
 
 | Principle | One-Liner | Red Flag |
 |-----------|-----------|----------|
-| SRP | One reason to change | "This class handles X and Y and Z" |
-| OCP | Add, don't modify | `if/else` chains for types |
-| LSP | Subtypes are substitutable | Type-checking in calling code |
-| ISP | Small, focused interfaces | Empty method implementations |
-| DIP | Depend on abstractions | `new ConcreteClass()` in business logic |
+| SRP | One reason to change | "This class handles X and Y and Z"; logic in Activities |
+| OCP | Add, don't modify | `when`/`if` chains on type strings |
+| LSP | Subtypes are substitutable | Type checks (`is`) in calling code |
+| ISP | Small, focused interfaces | `TODO()` / empty overrides |
+| DIP | Depend on abstractions | Concrete classes instantiated inside ViewModels/use cases |

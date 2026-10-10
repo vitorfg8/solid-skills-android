@@ -1,21 +1,49 @@
 # Testing Strategy
 
+> For installing or configuring test infrastructure (frameworks, runners, Robolectric, screenshot tools, coverage), use the `testing-setup` skill. This file covers how to design and write tests.
+
+> Based on the official guides: [Testing fundamentals](https://developer.android.com/training/testing/fundamentals), [What to test](https://developer.android.com/training/testing/fundamentals/what-to-test), [Test doubles](https://developer.android.com/training/testing/fundamentals/test-doubles), [Testing strategies](https://developer.android.com/training/testing/fundamentals/strategies), [Testing coroutines](https://developer.android.com/kotlin/coroutines/test), [Testing flows](https://developer.android.com/kotlin/flow/test).
+
 ## The Testing Pyramid
 
 ```
        /\
-      /  \        E2E Tests (Few)
-     /----\       - Full system
-    /      \      - Slow, brittle
+      /  \        UI / E2E Tests (Few)
+     /----\       - UI behavior: Robolectric in src/test
+    /      \      - E2E: instrumented, high fidelity
    /--------\
   /          \    Integration Tests (Some)
- /------------\   - Multiple components
-/              \  - Medium speed
+ /------------\   - Local or instrumented
+/              \  - Database, network, navigation
 ----------------
       Unit Tests (Many)
-      - Single unit
+      - Local JVM (src/test)
       - Fast, isolated
 ```
+
+**Fidelity vs speed:** big tests are closer to production but slower and flakier. Bugs caught by unit tests cost minutes to fix; bugs caught by E2E tests cost days. Choose the **lowest layer that gives the feedback you need**.
+
+## Where Tests Run
+
+| Location | Source set | Runs on | Use for |
+|----------|------------|---------|---------|
+| Local | `src/test` | JVM on your machine | Unit tests, ViewModels, repositories; Robolectric for UI/framework |
+| Instrumented | `src/androidTest` | Device or emulator | Real Android APIs, instrumented UI tests when requested, E2E |
+
+## What to Test
+
+**Essential:**
+- ViewModels (including their flows and state)
+- Data layer: repositories and data sources
+- Domain layer: use cases
+- Other platform-independent classes (formatters, validators, mappers)
+- UI: screen tests and navigation tests for critical user journeys
+
+**Edge cases:** boundaries (zero, negative, max), every network error, malformed data, full storage, configuration changes in the middle of an operation.
+
+**Don't test:**
+- The framework or third-party libraries themselves
+- Activities/Fragments with unit tests - they should contain no logic; cover them with UI tests
 
 ## Test Types
 
@@ -23,74 +51,86 @@
 
 Test ONE class or function in isolation.
 
-**Characteristics:**
-- Fast (milliseconds)
-- No external dependencies (mocked)
-- Most of your tests should be unit tests
+```kotlin
+class OrderTest {
+    @Test
+    fun calculateTotal_twoItems_returnsSum() {
+        val order = Order(items = listOf(OrderItem(Money.of(100)), OrderItem(Money.of(50))))
 
-```typescript
-describe('Order', () => {
-  it('calculates total correctly', () => {
-    const order = new Order();
-    order.addItem({ price: 100 });
-    order.addItem({ price: 50 });
+        val total = order.calculateTotal()
 
-    expect(order.calculateTotal()).toBe(150);
-  });
-});
+        assertEquals(Money.of(150), total)
+    }
+}
 ```
 
 ### Integration Tests
 
-Test multiple components together.
+Test real implementations working together at a boundary, e.g. a database data source against an in-memory database, or a remote data source against a mock web server.
 
-**Characteristics:**
-- Slower (may use real DB)
-- Test boundaries between components
-- Fewer than unit tests
+```kotlin
+@RunWith(AndroidJUnit4::class)
+class NewsLocalDataSourceTest {
+    private lateinit var database: NewsDatabase
+    private lateinit var newsLocalDataSource: NewsLocalDataSource
 
-```typescript
-describe('OrderService Integration', () => {
-  let db: Database;
-  let service: OrderService;
+    @Before
+    fun createDatabase() {
+        database = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            NewsDatabase::class.java,
+        ).build()
+        newsLocalDataSource = NewsLocalDataSource(database.articleDao())
+    }
 
-  beforeAll(async () => {
-    db = await Database.connect();
-    service = new OrderService(new PostgresOrderRepo(db));
-  });
+    @After
+    fun closeDatabase() = database.close()
 
-  it('saves and retrieves an order', async () => {
-    const order = Order.create({ customerId: '123' });
-    await service.save(order);
+    @Test
+    fun saveNews_thenGetNewsStream_emitsSavedArticles() = runTest {
+        newsLocalDataSource.saveNews(listOf(ARTICLE_ENTITY))
 
-    const retrieved = await service.findById(order.id);
-    expect(retrieved).toEqual(order);
-  });
-});
+        val articles = newsLocalDataSource.getNewsStream().first()
+
+        assertEquals(listOf(ARTICLE_ENTITY), articles)
+    }
+}
 ```
 
-### E2E / Acceptance Tests
+*(Room and MockWebServer are examples - use the project's storage and network stack.)*
 
-Test the entire system from user perspective.
+### UI Tests
 
-**Characteristics:**
-- Slowest
-- Most brittle (many moving parts)
-- Test critical paths only
+UI behavior tests run with Robolectric in `src/test` by default. Put them in `src/androidTest` only when instrumented tests are requested. Use the Compose test rule (Espresso for legacy Views):
 
-```typescript
-describe('Checkout Flow', () => {
-  it('user can complete purchase', async () => {
-    await page.goto('/products');
-    await page.click('[data-testid="add-to-cart"]');
-    await page.click('[data-testid="checkout"]');
-    await page.fill('[name="card"]', '4242424242424242');
-    await page.click('[data-testid="pay"]');
+```kotlin
+class NewsScreenTest {
+    @get:Rule
+    val composeTestRule = createComposeRule()
 
-    expect(await page.textContent('h1')).toBe('Order Confirmed');
-  });
-});
+    @Test
+    fun newsScreen_loadingState_showsProgressIndicator() {
+        composeTestRule.setContent {
+            NewsScreen(uiState = NewsUiState(isFetchingArticles = true), onRefresh = {})
+        }
+
+        composeTestRule.onNodeWithContentDescription("Loading news").assertIsDisplayed()
+    }
+}
 ```
+
+- Match with semantic matchers first (text, content description, role). Use `testTag` when finding the node would otherwise need more than three matchers
+- Verify state restoration on screens that hold user input
+
+### Testing Layers in Large Projects
+
+| Layer | Scope | Network | Runs on | When |
+|-------|-------|---------|---------|------|
+| Unit | One class | None | Local | Every commit |
+| Component | One module | None | Local / Robolectric / emulator | Every commit |
+| Feature | Several modules | Faked | Local / emulator | Pre-merge |
+| Application | Debug app | Faked or staging | Emulator / devices | Post-merge |
+| Release candidate | Minified release build | Production | Many devices | Pre-release |
 
 ---
 
@@ -98,19 +138,19 @@ describe('Checkout Flow', () => {
 
 Structure EVERY test this way:
 
-```typescript
-it('applies discount to premium users', () => {
-  // ARRANGE - Set up the test world
-  const user = new User({ isPremium: true });
-  const cart = new Cart(user);
-  cart.addItem({ price: 100 });
+```kotlin
+@Test
+fun calculateTotal_premiumUser_appliesTwentyPercentDiscount() {
+    // Arrange - Set up the test world
+    val cart = Cart(user = User(isPremium = true))
+    cart.addItem(CartItem(price = Money.of(100)))
 
-  // ACT - Execute the behavior under test
-  const total = cart.calculateTotal();
+    // Act - Execute the behavior under test
+    val total = cart.calculateTotal()
 
-  // ASSERT - Verify the expected outcome
-  expect(total).toBe(80); // 20% discount
-});
+    // Assert - Verify the expected outcome
+    assertEquals(Money.of(80), total)
+}
 ```
 
 ### Writing AAA Backwards
@@ -125,261 +165,179 @@ Sometimes easier to write in reverse:
 
 ## Test Naming
 
-### Bad: Abstract, Technical
+Format: `subjectUnderTest_trigger_expectedResult`. No backtick names with spaces (not fully supported on Android).
 
-```typescript
-it('should work correctly')
-it('handles the edge case')
-it('sets the data property')
+```kotlin
+// BAD: Abstract, technical
+@Test fun worksCorrectly()
+@Test fun handlesEdgeCase()
+
+// GOOD: Concrete examples, domain language
+@Test fun calculateDiscount_premiumUser_returnsTwentyPercent()
+@Test fun checkout_emptyCart_showsEmptyCartMessage()
+@Test fun isPalindrome_racecar_returnsTrue()
 ```
 
-### Good: Concrete Examples, Domain Language
-
-```typescript
-it('calculates 20% discount for premium users')
-it('returns error when cart is empty')
-it('recognizes "racecar" as a palindrome')
-```
-
-### Format
-
-```typescript
-// Option 1: should + behavior
-it('should apply tax based on shipping state')
-
-// Option 2: when + then
-it('when adding 2 + 3, then returns 5')
-
-// Option 3: Given-When-Then (for complex scenarios)
-describe('given a premium user', () => {
-  describe('when they checkout', () => {
-    it('then they receive 20% discount', () => { ... });
-  });
-});
-```
+Test classes are named `<ClassUnderTest>Test`.
 
 ---
 
 ## Test Doubles
 
-### Dummy
+Official definitions:
 
-Object passed but never used.
+| Type | Description |
+|------|-------------|
+| **Fake** | Working implementation unsuitable for production (e.g. in-memory repository). **Preferred.** |
+| **Mock** | Programmed behavior + expectations about interactions; fails if they aren't met |
+| **Stub** | Programmed behavior, no interaction expectations |
+| **Dummy** | Passed but never used |
+| **Spy** | Wraps a real object and records calls (usually avoided) |
+| **Shadow** | A Robolectric fake of a framework class |
 
-```typescript
-const dummyLogger = {} as Logger;
-new UserService(realRepo, dummyLogger);
+### Fake (preferred)
+
+```kotlin
+class FakeUserRepository : UserRepository {
+    private val users = MutableStateFlow<Map<UserId, User>>(emptyMap())
+
+    override suspend fun saveUser(user: User) {
+        users.update { current -> current + (user.id to user) }
+    }
+
+    override fun getUserStream(id: UserId): Flow<User?> = users.map { current -> current[id] }
+}
 ```
 
-### Stub
-
-Returns predefined values.
-
-```typescript
-const stubRepo: UserRepo = {
-  findById: () => Promise.resolve(new User({ name: 'Test' })),
-  save: () => Promise.resolve(),
-};
-```
-
-### Spy
-
-Records how it was called.
-
-```typescript
-const emailSpy = {
-  sentEmails: [] as string[],
-  send(to: string, message: string) {
-    this.sentEmails.push(to);
-  }
-};
-
-// Later
-expect(emailSpy.sentEmails).toContain('user@example.com');
-```
+- Named with the `Fake` prefix
+- Live in test source sets (or a shared `:core:testing` module), never in production code
+- Need no mocking framework and survive refactoring of the subject
 
 ### Mock
 
-Verifies expected interactions.
+Use when the interaction itself is the behavior:
 
-```typescript
-const mockRepo = jest.fn<UserRepo>();
-mockRepo.save.mockResolvedValue(undefined);
-
-// After test
-expect(mockRepo.save).toHaveBeenCalledWith(expectedUser);
+```kotlin
+// MockK example - only if the project already uses MockK
+val analytics = mockk<AnalyticsLogger>(relaxed = true)
+checkoutViewModel.confirmPurchase()
+verify(exactly = 1) { analytics.logPurchase(any()) }
 ```
 
-### Fake
+A hand-written fake that records events is an equally valid, library-free alternative. **Follow the project's existing tooling.**
 
-Working implementation (simplified).
+### Dummy
 
-```typescript
-class InMemoryUserRepo implements UserRepo {
-  private users: Map<string, User> = new Map();
-
-  async save(user: User): Promise<void> {
-    this.users.set(user.id, user);
-  }
-
-  async findById(id: string): Promise<User | null> {
-    return this.users.get(id) || null;
-  }
-}
+```kotlin
+NewsScreen(uiState = NewsUiState(), onRefresh = {}) // onRefresh is a dummy
 ```
 
 ---
 
 ## Testing Strategies by Layer
 
-### Domain Layer (Most Tests)
+### ViewModels
 
-- Unit tests with no mocks
-- Test business rules, value objects, entities
-- Fast, comprehensive
+```kotlin
+class NewsViewModelTest {
+    @get:Rule
+    val mainDispatcherRule = MainDispatcherRule()
 
-```typescript
-describe('Money', () => {
-  it('adds amounts with same currency', () => {
-    const a = Money.dollars(10);
-    const b = Money.dollars(20);
-    expect(a.add(b).equals(Money.dollars(30))).toBe(true);
-  });
+    private val newsRepository = FakeNewsRepository()
+    private val viewModel = NewsViewModel(newsRepository)
 
-  it('throws when adding different currencies', () => {
-    const usd = Money.dollars(10);
-    const eur = Money.euros(10);
-    expect(() => usd.add(eur)).toThrow(CurrencyMismatch);
-  });
-});
+    @Test
+    fun uiState_repositoryEmitsArticles_showsArticles() = runTest {
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.uiState.collect {} }
+
+        newsRepository.emit(listOf(ARTICLE))
+
+        assertEquals(listOf(ARTICLE.toUiState()), viewModel.uiState.value.newsItems)
+    }
+}
 ```
 
-### Application Layer
+- Replace `Dispatchers.Main` with `MainDispatcherRule` (see [coroutines-flow.md](coroutines-flow.md))
+- Assert on `uiState.value`; start an empty collector when the state uses `stateIn(WhileSubscribed)`
+- Use `SavedStateHandle(mapOf("id" to "42"))` directly in tests
 
-- Integration tests with mocked infrastructure
-- Test use case orchestration
+### Use Cases
 
-```typescript
-describe('CreateOrderUseCase', () => {
-  it('creates order and sends confirmation', async () => {
-    const orderRepo = new InMemoryOrderRepo();
-    const emailService = { send: jest.fn() };
-    const useCase = new CreateOrderUseCase(orderRepo, emailService);
+```kotlin
+class GetLatestNewsWithAuthorsUseCaseTest {
+    @Test
+    fun invoke_articlesWithAuthors_combinesThem() = runTest {
+        val useCase = GetLatestNewsWithAuthorsUseCase(
+            newsRepository = FakeNewsRepository(articles = listOf(ARTICLE)),
+            authorsRepository = FakeAuthorsRepository(authors = listOf(AUTHOR)),
+            defaultDispatcher = StandardTestDispatcher(testScheduler),
+        )
 
-    await useCase.execute({ customerId: '123', items: [...] });
+        val result = useCase()
 
-    expect(orderRepo.count()).toBe(1);
-    expect(emailService.send).toHaveBeenCalled();
-  });
-});
+        assertEquals(listOf(ArticleWithAuthor(ARTICLE, AUTHOR)), result)
+    }
+}
 ```
 
-### Infrastructure Layer
+### Repositories
 
-- Integration tests with real dependencies
-- Test database, API integrations
+- Unit test with fake data sources (business logic, mapping, conflict resolution, error handling)
+- Integration test data sources against real implementations (in-memory database, mock web server)
 
-```typescript
-describe('PostgresOrderRepo', () => {
-  let repo: PostgresOrderRepo;
+### UI
 
-  beforeAll(async () => {
-    repo = new PostgresOrderRepo(testDb);
-  });
-
-  it('persists and retrieves order', async () => {
-    const order = Order.create({ ... });
-    await repo.save(order);
-
-    const found = await repo.findById(order.id);
-    expect(found).toEqual(order);
-  });
-});
-```
+- Screen tests on stateless composables with fake state
+- Navigation tests for critical journeys
+- Screenshot tests (if the project uses them) at different font scales, themes, and locales
 
 ---
 
-## High-Value Integration Tests
+## Contract Tests
 
-Focus integration tests on:
+Verify that every implementation honors the same interface:
 
-1. **Boundaries** - Where systems meet
-2. **Critical paths** - Money, security, core features
-3. **Complex queries** - Database operations
+```kotlin
+abstract class UserRepositoryContractTest {
+    abstract fun createRepository(): UserRepository
 
-### Contract Tests
+    @Test
+    fun saveUser_thenGetUserStream_emitsSavedUser() = runTest {
+        val repository = createRepository()
 
-Verify implementations match interfaces.
+        repository.saveUser(USER)
 
-```typescript
-// Shared contract test
-function testUserRepoContract(createRepo: () => UserRepo) {
-  describe('UserRepo Contract', () => {
-    let repo: UserRepo;
+        assertEquals(USER, repository.getUserStream(USER.id).first())
+    }
 
-    beforeEach(() => {
-      repo = createRepo();
-    });
-
-    it('saves and retrieves user', async () => {
-      const user = User.create({ name: 'Test' });
-      await repo.save(user);
-      const found = await repo.findById(user.id);
-      expect(found).toEqual(user);
-    });
-
-    it('returns null for missing user', async () => {
-      const found = await repo.findById('nonexistent');
-      expect(found).toBeNull();
-    });
-  });
+    @Test
+    fun getUserStream_unknownId_emitsNull() = runTest {
+        assertNull(createRepository().getUserStream(UserId("unknown")).first())
+    }
 }
 
-// Apply to all implementations
-testUserRepoContract(() => new InMemoryUserRepo());
-testUserRepoContract(() => new PostgresUserRepo(testDb));
+class FakeUserRepositoryTest : UserRepositoryContractTest() {
+    override fun createRepository(): UserRepository = FakeUserRepository()
+}
 ```
+
+This guarantees the fake behaves like the real implementation.
 
 ---
 
-## Test Builders
+## Test Data
 
-Create test objects easily.
+Kotlin default arguments and `copy()` replace most test builders:
 
-```typescript
-class OrderBuilder {
-  private props: Partial<OrderProps> = {
-    id: 'order-1',
-    customerId: 'cust-1',
-    items: [],
-    status: 'pending',
-  };
+```kotlin
+fun anOrder(
+    id: OrderId = OrderId("order-1"),
+    items: List<OrderItem> = emptyList(),
+    status: OrderStatus = OrderStatus.Pending,
+): Order = Order(id = id, items = items, status = status)
 
-  withId(id: string): OrderBuilder {
-    this.props.id = id;
-    return this;
-  }
-
-  withItems(items: Item[]): OrderBuilder {
-    this.props.items = items;
-    return this;
-  }
-
-  paid(): OrderBuilder {
-    this.props.status = 'paid';
-    return this;
-  }
-
-  build(): Order {
-    return Order.create(this.props as OrderProps);
-  }
-}
-
-// Usage
-const order = new OrderBuilder()
-  .withItems([{ sku: 'ABC', price: 100 }])
-  .paid()
-  .build();
+// Usage - only what matters for this test is visible
+val paidOrder = anOrder(items = listOf(OrderItem(Money.of(100)))).copy(status = OrderStatus.Paid)
 ```
 
 ---
@@ -389,8 +347,10 @@ const order = new OrderBuilder()
 | Mistake | Problem | Solution |
 |---------|---------|----------|
 | Testing implementation | Brittle tests | Test behavior only |
-| Too many mocks | Tests prove nothing | Use real objects when possible |
+| Too many mocks | Tests prove nothing | Prefer fakes and real objects |
 | Shared state | Flaky tests | Isolate each test |
 | No assertions | False confidence | Always assert something meaningful |
 | Testing trivial code | Wasted effort | Focus on logic and edge cases |
-| Slow tests | Reduced feedback | Optimize, use unit tests |
+| Hardcoded dispatchers | Non-deterministic tests | Inject dispatchers, use `runTest` |
+| Asserting every StateFlow emission | Flaky (conflation) | Assert on `.value` |
+| Unit testing Activities/Fragments | Logic in the wrong place | Move logic to ViewModel; UI test the screen |

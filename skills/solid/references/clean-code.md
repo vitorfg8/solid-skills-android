@@ -1,11 +1,13 @@
 # Clean Code Practices
 
 > Parts of this guide are based on concepts from the **"Clean Code" course summary** by [Academind GmbH / Maximilian Schwarzmuller](https://academind.com) (c) 2020.
+>
+> Kotlin-specific rules follow the [Android Kotlin style guide](https://developer.android.com/kotlin/style-guide), [Kotlin coding conventions](https://kotlinlang.org/docs/coding-conventions.html), and [Common Kotlin patterns with Android](https://developer.android.com/kotlin/common-patterns). Where they disagree, the Android style guide wins.
 
 ## What is Clean Code?
 
 Code that is:
-- **Easy to understand** - reveals intent clearly
+- **Easy to understand** - reveals intent clearly, on first read
 - **Easy to change** - modifications are localized
 - **Easy to test** - dependencies are injectable
 - **Simple** - no unnecessary complexity
@@ -19,12 +21,108 @@ Code has THREE consumers:
 
 Design for all three, but remember: **developers read code 10x more than they write it.**
 
+---
+
+## Readability & Explicitness
+
+**Code must be easily readable and understandable by humans, and it must say explicitly what it does.** If a reader has to run, debug, or jump across files to understand a function, the function is not done.
+
+When readability conflicts with brevity, cleverness, or a size guideline, **readability wins**.
+
+### Names reveal every effect
+
+```kotlin
+// BAD: hides that it also saves and sends a notification
+fun process(draft: Draft) { /* validates, saves, notifies */ }
+
+// GOOD: the name tells the whole story
+fun saveDraftAndNotifyCollaborators(draft: Draft) { /* ... */ }
+```
+
+### Make arguments explicit
+
+```kotlin
+// BAD: what do true and false mean?
+uploadPhoto(photo, true, false)
+
+// GOOD: named arguments
+uploadPhoto(photo, shouldCompress = true, isPublic = false)
+```
+
+Use named arguments for every `Boolean` argument and when several parameters share a type.
+
+### No magic numbers
+
+```kotlin
+// BAD
+if (password.length < 8) return PasswordStrength.Weak
+
+// GOOD
+if (password.length < MIN_PASSWORD_LENGTH) return PasswordStrength.Weak
+
+private const val MIN_PASSWORD_LENGTH = 8
+```
+
+### Don't chain scope functions
+
+```kotlin
+// BAD: the reader must track what `it` and `this` are at each step
+user?.let { it.profile }?.also { analytics.log(it.id) }?.run { avatarUrl ?: defaultAvatarUrl }
+
+// GOOD: plain statements, named values
+val profile = user?.profile ?: return defaultAvatarUrl
+analytics.logProfileViewed(profile.id)
+return profile.avatarUrl ?: defaultAvatarUrl
+```
+
+Scope functions are fine when they make code clearer (`apply` for configuring an object, a single `?.let` for a nullable value) - never as a puzzle.
+
+### Name lambda parameters when nesting
+
+```kotlin
+// BAD
+orders.filter { it.isPaid }.forEach { it.items.forEach { println(it.name) } }
+
+// GOOD
+for (order in orders.filter { order -> order.isPaid }) {
+    order.items.forEach { item -> println(item.name) }
+}
+```
+
+Use `it` only in short, non-nested lambdas.
+
+### Prefer an early return over `?.let { } ?: run { }`
+
+```kotlin
+// BAD
+user?.let { showProfile(it) } ?: run { showLoginPrompt() }
+
+// GOOD
+if (user == null) {
+    showLoginPrompt()
+    return
+}
+showProfile(user)
+```
+
+### Avoid surprising Kotlin features
+
+- `infix` only for two values playing similar roles, never for functions with side effects
+- Operator overloading only when the meaning is obvious (`Money + Money`)
+- Extension functions for natural, discoverable operations - not to hide unrelated behavior on common types (`String.saveToDatabase()`)
+
+### The one-read test
+
+Before finishing, ask: **"Could a developer new to this codebase explain what this code does after reading it once?"** If not, rename, extract, or simplify. A comment is the last resort and only explains *why*.
+
+---
+
 ## Naming Principles
 
 ### 1. Consistency & Uniqueness (HIGHEST PRIORITY)
 Same concept = same name everywhere. One name per concept.
 
-```typescript
+```kotlin
 // BAD: Inconsistent names for same concept
 getUserById(id)
 fetchCustomerById(id)
@@ -39,75 +137,91 @@ getProduct(id)
 ### 2. Understandability
 Use domain language, not technical jargon.
 
-```typescript
+```kotlin
 // BAD: Technical
-const arr = users.filter(u => u.isActive);
+val arr = users.filter { u -> u.isActive }
 
 // GOOD: Domain language
-const activeCustomers = users.filter(user => user.isActive);
+val activeCustomers = users.filter { user -> user.isActive }
 ```
 
 ### 3. Specificity
-Avoid vague names: `data`, `info`, `manager`, `handler`, `processor`, `utils`
+Avoid vague names: `data`, `info`, `manager`, `handler`, `processor`, `Util`, `Helper`, `Wrapper`.
 
-```typescript
+```kotlin
 // BAD: Vague
-class DataManager { }
-function processInfo(data) { }
+class DataManager
+fun processInfo(data: Any) {}
 
 // GOOD: Specific
-class OrderRepository { }
-function validatePayment(payment) { }
+class OrderRepository
+fun validatePayment(payment: Payment) {}
 ```
 
 ### 4. Brevity (but not at cost of clarity)
-Short names are good only if meaning is preserved.
 
-```typescript
+```kotlin
 // BAD: Too cryptic
-const usrLst = getUsrs();
+val usrLst = getUsrs()
 
 // BAD: Unnecessarily long
-const listOfAllActiveUsersInTheSystem = getActiveUsers();
+val listOfAllActiveUsersInTheSystem = getActiveUsers()
 
 // GOOD: Brief but clear
-const activeUsers = getActiveUsers();
+val activeUsers = getActiveUsers()
 ```
 
 ### 5. Searchability
-Names should be unique enough to grep/search.
 
-```typescript
+```kotlin
 // BAD: Common word, hard to search
-const data = fetch();
+val data = fetch()
 
 // GOOD: Unique, searchable
-const orderSummary = fetchOrderSummary();
+val orderSummary = fetchOrderSummary()
 ```
 
 ### 6. Pronounceability
-You should be able to say it in conversation.
 
-```typescript
+```kotlin
 // BAD
-const genymdhms = generateYearMonthDayHourMinuteSecond();
+val genymdhms = generateYearMonthDayHourMinuteSecond()
 
 // GOOD
-const timestamp = generateTimestamp();
+val timestamp = generateTimestamp()
 ```
 
 ### 7. Austerity
 Avoid unnecessary filler words.
 
-```typescript
+```kotlin
 // BAD: Redundant
-const userData = user; // 'Data' adds nothing
-class UserClass { }    // 'Class' adds nothing
+val userData = user // 'Data' adds nothing
+class UserClass     // 'Class' adds nothing
 
 // GOOD
-const user = user;
-class User { }
+class User
 ```
+
+### Kotlin Naming Conventions
+
+| Element | Convention | Example |
+|---------|------------|---------|
+| Classes, interfaces, objects | PascalCase nouns | `OrderRepository` |
+| Functions | camelCase verbs | `calculateTotal()` |
+| `@Composable` returning `Unit` | PascalCase nouns | `OrderSummaryCard` |
+| Properties, local variables | camelCase nouns | `activeOrders` |
+| Booleans | questions | `isLoading`, `hasError`, `canSubmit` |
+| Constants (`const val`, deeply immutable top-level/`object` `val`) | UPPER_SNAKE_CASE | `MAX_RETRY_COUNT` |
+| Backing properties | `_` prefix | `private val _uiState` |
+| Packages | lowercase, no underscores | `com.example.orders` |
+| Files | PascalCase, named after the main class | `OrderRepository.kt` |
+| Test functions | `subject_trigger_result` (no backticks) | `checkout_emptyCart_showsError` |
+
+- **No Hungarian/`m` prefixes** (`mName`, `sInstance`)
+- **Acronyms as words**: `XmlHttpRequest`, `userId`, `HtmlParser`
+- Values inside a `class` use camelCase even if they never change; use `const val` in a `companion object` for true constants
+- Mutating vs copying: `sort()` changes in place, `sorted()` returns a copy
 
 ---
 
@@ -115,115 +229,101 @@ class User { }
 
 Functions are the building blocks of any codebase. Clean functions are **small, focused, and readable**.
 
-### Minimize Parameters
+### Parameters: defaults and named arguments
 
-The fewer parameters, the easier to read and call.
+Kotlin's idiom is **default parameter values + named arguments**, not overloads or "options" objects.
 
-```typescript
-// BEST: No parameters - clear intent
-createSession();
-user.save();
+```kotlin
+// BAD: Positional arguments of the same type
+createRectangle(10, 9, 30, 12)
 
-// GOOD: One parameter - straightforward
-isValid(email);
-file.write(data);
+// GOOD: Named arguments
+createRectangle(x = 10, y = 9, width = 30, height = 12)
 
-// OKAY: Two parameters - depends on context
-login('test@test.com', 'testers');
-createProduct('Carpet', 12.99);
-
-// BAD: Three+ parameters - hard to read and call
-createUser('Max', 'Max', 'test@test.com', 'testers', 31, ['Sports', 'Cooking']);
+// GOOD: Defaults instead of overloads
+fun createUser(
+    name: String,
+    email: Email,
+    newsletterOptIn: Boolean = false,
+): User
 ```
 
-**Reduce parameters by grouping into objects:**
+Group parameters into a `data class` only when the group is a **real domain concept** (`Address`, `DateRange`), not just to reduce the count.
 
-```typescript
-// BAD: Many positional parameters
-createRectangle(10, 9, 30, 12);
-
-// GOOD: Parameter object
-createRectangle({ x: 10, y: 9, width: 30, height: 12 });
-```
+Composables are an explicit exception: many defaulted, named parameters is the official Compose style (see [compose.md](compose.md)).
 
 ### Keep Functions Small
 
 Small functions are easier to read and force you to extract well-named helper functions.
 
-```typescript
+```kotlin
 // BAD: Long function with mixed concerns
-function login(email, password) {
-  if (!email.includes('@') || password.length < 7) {
-    throw new Error('Invalid input!');
-  }
-  const existingUser = database.find('users', 'email', '==', email);
-  if (!existingUser) {
-    throw new Error('Could not find a user for the provided email.');
-  }
-  if (existingUser.password === password) {
+fun login(email: String, password: String) {
+    if (!email.contains("@") || password.length < 7) {
+        throw IllegalArgumentException("Invalid input!")
+    }
+    val existingUser = database.query("users", "email", email)
+        ?: throw UserNotFoundException(email)
+    if (existingUser.password != password) {
+        throw InvalidCredentialsException()
+    }
     // create a session
-  } else {
-    throw new Error('Invalid credentials!');
-  }
 }
 
 // GOOD: Small, composed functions
-function login(email, password) {
-  validateUserInput(email, password);
-  const existingUser = findUserByEmail(email);
-  existingUser.validatePassword(password);
+fun login(email: Email, password: Password) {
+    val existingUser = findUserByEmail(email)
+    existingUser.verifyPassword(password)
+    startSession(existingUser)
 }
 ```
 
-### Do One Thing (Levels of Abstraction)
+Expression bodies are welcome for single expressions: `fun isAdult(age: Int): Boolean = age >= ADULT_AGE`.
 
-Functions should do **one thing** at **one level of abstraction**.
+### Do One Thing (Levels of Abstraction)
 
 All operations in the function body should be on the **same level** of abstraction, exactly **one level below** the function name.
 
-```typescript
+```kotlin
 // BAD: Mixed levels of abstraction
-function printDocument(documentPath) {
-  const fsConfig = { mode: 'read', onError: 'retry' };
-  const document = fileSystem.readFile(documentPath, fsConfig);
-  const printer = new Printer('pdf');
-  printer.print(document);
+fun printDocument(documentPath: String) {
+    val file = File(documentPath)
+    val document = file.bufferedReader().use { reader -> reader.readText() }
+    val printer = Printer(PrinterFormat.Pdf)
+    printer.print(document)
 }
 
 // GOOD: Consistent abstraction level
-function printDocument(documentPath) {
-  const document = readFromFile(documentPath);
-  const printer = new Printer('pdf');
-  printer.print(document);
+fun printDocument(documentPath: String) {
+    val document = readDocument(documentPath)
+    val printer = Printer(PrinterFormat.Pdf)
+    printer.print(document)
 }
 ```
 
 ### Split Functions Reasonably
 
 Don't extract just for the sake of extraction. **Three warning signs** of bad splits:
-1. You're just **renaming the operation** (e.g., `buildUser()` that just calls `new User()`)
+1. You're just **renaming the operation** (e.g. `buildUser()` that just calls `User(...)`)
 2. You need to **scroll more** to follow a simple function
 3. You **can't find a good name** because the original name is already taken
 
-```typescript
+```kotlin
 // OVER-SPLIT: Too many trivial extractions
-function createUser(email, password) {
-  validateInput(email, password);
-  saveUser(email, password);
+fun createUser(email: Email, password: Password) {
+    validateInput(email, password)
+    saveUser(email, password)
 }
-function saveUser(email, password) {
-  const user = buildUser(email, password);
-  user.save();
+fun saveUser(email: Email, password: Password) {
+    val user = buildUser(email, password)
+    userRepository.save(user)
 }
-function buildUser(email, password) {
-  return new User(email, password);  // just renaming!
-}
+fun buildUser(email: Email, password: Password) = User(email, password) // just renaming!
 
 // BETTER: Meaningful splits only
-function createUser(email, password) {
-  validateInput(email, password);
-  const user = new User(email, password);
-  user.save();
+fun createUser(email: Email, password: Password) {
+    validateInput(email, password)
+    userRepository.save(User(email, password))
 }
 ```
 
@@ -235,445 +335,393 @@ function createUser(email, password) {
 
 A side effect is unexpected when the function name doesn't imply it.
 
-```typescript
-// BAD: Unexpected side effect - name says "validate", but creates a session
-function validateUserInput(email, password) {
-  if (!isEmail(email) || passwordIsInvalid(password)) {
-    throw new Error('Invalid input!');
-  }
-  createSession();  // unexpected!
+```kotlin
+// BAD: name says "validate", but it starts a session
+fun validateUserInput(email: String, password: String) {
+    require(isEmail(email) && isValidPassword(password)) { "Invalid input!" }
+    startSession() // unexpected!
 }
 
-// GOOD: Move side effect out, or rename to imply it
-function validateAndInitSession(email, password) {
-  validateUserInput(email, password);
-  createSession();
+// GOOD: separate, or rename to imply it
+fun validateInputAndStartSession(email: String, password: String) {
+    validateUserInput(email, password)
+    startSession()
 }
 ```
+
+Properties must never have side effects. Use a property only when it's cheap, can't throw, and returns the same value while state doesn't change; otherwise use a function.
 
 ---
 
 ## Control Structures
 
-Control structures (`if`, `for`, `while`, `switch`) can lead to suboptimal code. Three areas to focus on:
-
 ### Prefer Positive Checks
 
-Use positive wording in conditions when possible.
-
-```typescript
+```kotlin
 // GOOD: Positive check - zero thinking required
-if (isEmpty(blogContent)) {
-  // throw error
-}
+if (blogContent.isEmpty()) { /* ... */ }
 
 // LESS CLEAR: Negated positive - extra interpretation
-if (!hasContent(blogContent)) {
-  // throw error
-}
+if (!blogContent.hasContent()) { /* ... */ }
 ```
 
-Exception: sometimes a negative check is cleaner when there are multiple valid states.
-
-```typescript
-// GOOD: Negative check avoids listing all invalid states
-if (!isOpen(transaction)) {
-  // throw error
-}
-```
+Exception: a negative check is cleaner when it avoids listing many valid states (`if (!transaction.isOpen)`). Kotlin provides positive pairs: `isNotEmpty()`, `isNullOrBlank()`, `none { }`.
 
 ### Avoid Deep Nesting
 
-Deeply nested code is hard to read and error-prone. Strategies to flatten:
-
 #### 1. Use Guards & Fail Fast
 
-```typescript
+```kotlin
 // BAD: Deep nesting
-function messageUser(user, message) {
-  if (user) {
-    if (message) {
-      if (user.acceptsMessages) {
-        const success = user.sendMessage(message);
-        if (success) {
-          console.log('Message sent!');
+fun messageUser(user: User?, message: String?) {
+    if (user != null) {
+        if (message != null) {
+            if (user.acceptsMessages) {
+                user.sendMessage(message)
+            }
         }
-      }
     }
-  }
 }
 
-// GOOD: Guard clause, fail fast
-function messageUser(user, message) {
-  if (!user || !message || !user.acceptsMessages) {
-    return;
-  }
-  user.sendMessage(message);
-  if (success) {
-    console.log('Message sent!');
-  }
+// GOOD: Guard clauses
+fun messageUser(user: User?, message: String?) {
+    if (user == null || message == null) return
+    if (!user.acceptsMessages) return
+    user.sendMessage(message)
+}
+
+// GOOD: Elvis guard
+fun showProfile(userId: UserId) {
+    val user = userRepository.findUser(userId) ?: return
+    render(user)
 }
 ```
 
-#### 2. Extract Control Structures into Functions
+#### 2. Use `if`/`when` as expressions
 
-```typescript
+Kotlin prefers expressions over statements when choosing a value. Use `if` for two branches, `when` for three or more.
+
+```kotlin
+val discountPercent = if (user.isPremium) PREMIUM_DISCOUNT else NO_DISCOUNT
+
+val shippingCost = when (shippingMethod) {
+    ShippingMethod.Standard -> Money.of(5)
+    ShippingMethod.Express -> Money.of(15)
+    ShippingMethod.SameDay -> Money.of(25)
+}
+```
+
+An exhaustive `when` over a `sealed`/`enum` type (no `else` branch) makes the compiler flag every place to update when a new case is added.
+
+#### 3. Extract Control Structures into Functions
+
+```kotlin
 // BAD: Nested control structure
-function connectDatabase(uri) {
-  if (!uri) {
-    throw new Error('An URI is required!');
-  }
-  const db = new Database(uri);
-  let success = db.connect();
-  if (!success) {
-    if (db.fallbackConnection) {
-      return db.fallbackConnectionDetails;
-    } else {
-      throw new Error('Could not connect!');
+fun connectDatabase(uri: String?): ConnectionDetails {
+    if (uri == null) throw IllegalArgumentException("A URI is required!")
+    val database = Database(uri)
+    if (!database.connect()) {
+        if (database.hasFallbackConnection) {
+            return database.fallbackConnectionDetails
+        } else {
+            throw ConnectionException("Could not connect!")
+        }
     }
-  }
-  return db.connectionDetails;
+    return database.connectionDetails
 }
 
 // GOOD: Extract nested logic
-function connectDatabase(uri) {
-  validateUri(uri);
-
-  const db = new Database(uri);
-  let success = db.connect();
-  if (success) {
-    return db.connectionDetails;
-  } else {
-    return connectFallbackDatabase(db);
-  }
+fun connectDatabase(uri: String?): ConnectionDetails {
+    requireNotNull(uri) { "A URI is required!" }
+    val database = Database(uri)
+    if (database.connect()) return database.connectionDetails
+    return connectFallbackDatabase(database)
 }
 ```
 
-#### 3. Use Polymorphism & Factory Functions
+#### 4. Use Polymorphism
 
-Replace duplicated conditional logic with polymorphic objects.
+Replace repeated type checks with `sealed` types or interfaces.
 
-```typescript
+```kotlin
 // BAD: Repeated type checks
-function processTransaction(transaction) {
-  if (isPayment(transaction)) {
-    if (usesCreditCard(transaction)) {
-      processCreditCardPayment(transaction);
+fun processTransaction(transaction: Transaction) {
+    if (transaction.type == "payment") {
+        if (transaction.method == "card") processCardPayment(transaction)
+        if (transaction.method == "paypal") processPaypalPayment(transaction)
+    } else {
+        if (transaction.method == "card") processCardRefund(transaction)
+        if (transaction.method == "paypal") processPaypalRefund(transaction)
     }
-    if (usesPayPal(transaction)) {
-      processPayPalPayment(transaction);
-    }
-  } else {
-    if (usesCreditCard(transaction)) {
-      processCreditCardRefund(transaction);
-    }
-    if (usesPayPal(transaction)) {
-      processPayPalRefund(transaction);
-    }
-  }
 }
 
-// GOOD: Factory function with polymorphic object
-function getProcessors(transaction) {
-  if (usesCreditCard(transaction)) {
-    return { processPayment: processCreditCardPayment, processRefund: processCreditCardRefund };
-  }
-  if (usesPayPal(transaction)) {
-    return { processPayment: processPayPalPayment, processRefund: processPayPalRefund };
-  }
+// GOOD: Polymorphic processor
+interface PaymentProcessor {
+    fun processPayment(transaction: Transaction)
+    fun processRefund(transaction: Transaction)
 }
 
-function processTransaction(transaction) {
-  const processors = getProcessors(transaction);
-  if (isPayment(transaction)) {
-    processors.processPayment(transaction);
-  } else {
-    processors.processRefund(transaction);
-  }
+fun processTransaction(transaction: Transaction, processor: PaymentProcessor) {
+    when (transaction.kind) {
+        TransactionKind.Payment -> processor.processPayment(transaction)
+        TransactionKind.Refund -> processor.processRefund(transaction)
+    }
 }
 ```
 
-#### 4. Embrace Errors (throw instead of error codes)
+#### 5. Embrace Errors (not error codes)
 
-```typescript
-// BAD: Synthetic errors with status codes
-function createUser(email, password) {
-  const inputValidity = validateInput(email, password);
-  if (inputValidity.code === 1 || inputValidity.code === 2) {
-    console.log(inputValidity.message);
-    return;
-  }
-  // ... continue
+```kotlin
+// BAD: Synthetic error codes
+fun createUser(email: String, password: String): Int {
+    if (!email.contains("@")) return 1
+    if (password.length < MIN_PASSWORD_LENGTH) return 2
+    // ...
+    return 0
 }
 
-// GOOD: Use real errors with try-catch
-function handleSignupRequest(request) {
-  try {
-    createUser(request.email, request.password);
-  } catch (error) {
-    console.log(error.message);
-  }
-}
-
-function createUser(email, password) {
-  validateInput(email, password);
-  // ... continue
-}
-
-function validateInput(email, password) {
-  if (!email.includes('@') || password.length < 7) {
-    throw new Error('Input is invalid!');
-  }
-  const existingUser = findUserByEmail(email);
-  if (existingUser) {
-    throw new Error('Email is already taken!');
-  }
+// GOOD: Real errors
+fun createUser(email: String, password: String): User {
+    require(email.contains("@")) { "Invalid email: $email" }
+    require(password.length >= MIN_PASSWORD_LENGTH) { "Password too short" }
+    if (userRepository.exists(email)) throw EmailAlreadyTakenException(email)
+    // ...
 }
 ```
+
+- `require(...)` for invalid arguments (`IllegalArgumentException`), `check(...)` for invalid state (`IllegalStateException`), `requireNotNull`/`checkNotNull` for nulls
+- Domain-specific exceptions for expected failures, or a `sealed` result type / `Result` when the caller must handle them
+- Catch **specific** exceptions; only catch to recover or add context
+- **Never swallow `CancellationException`** in coroutines
+
+### Nullability
+
+- Prefer non-null types; make nullability meaningful
+- `?.` and `?:` instead of `!!` - `!!` reintroduces `NullPointerException`
+- `?: return` / `?: throw` for guards
+- Use `requireContext()`/`requireActivity()` instead of `context!!`
+- Treat Java platform types as nullable and declare explicit Kotlin types for them
+- Check nullable `Boolean`s with `== true` / `== false`
 
 ---
 
 ## Classes & Objects
 
-### Objects vs Data Containers
+### Objects vs Data Holders
 
-Distinguish between **objects** (hide data, expose behavior) and **data containers** (expose data, no behavior).
+Distinguish between **objects** (hide data, expose behavior) and **data holders** (expose data, no behavior).
 
-```typescript
-// Data Container: exposes data publicly
-class UserData {
-  public name: string;
-  public age: number;
-}
+```kotlin
+// Data holder: exposes data
+data class UserDetails(val name: String, val age: Int)
 
 // Object: hides data, exposes behavior
-class User {
-  private name: string;
-  private age: number;
-
-  constructor(name: string, age: number) {
-    this.name = name;
-    this.age = age;
-  }
-
-  greet() {
-    console.log(`Hi! I'm ${this.name} and I'm ${this.age} years old.`);
-  }
+class Account(private var balance: Money) {
+    fun withdraw(amount: Money): WithdrawResult { /* ... */ }
 }
 ```
 
-Both are valid - use the right kind for the right job. **Don't mix types**: don't access internals of objects, and don't add behavior to data containers.
+Both are valid - use the right kind for the right job. **Don't mix types**: don't reach into the internals of objects, and don't add business behavior to data holders (derived read-only properties are fine).
 
 ### Class Cohesion
 
 **Cohesion** = how much methods use class properties. High cohesion means every method uses most properties.
 
 - **High cohesion** → well-designed, focused class
-- **Low cohesion** → should probably be a data container or split into smaller classes
+- **Low cohesion** → should probably be a data holder or split into smaller classes
 
-When cohesion decreases, **split into smaller, more focused classes**.
+### Visibility and Immutability
+
+- Use the narrowest visibility (`private`, `internal`)
+- Prefer `val` over `var`, and read-only `List`/`Set`/`Map` over mutable ones
+- Never expose mutable state; use a private backing property
+
+```kotlin
+class ShoppingCart {
+    private val _items = mutableListOf<CartItem>()
+    val items: List<CartItem> get() = _items
+}
+```
+
+- `lateinit` only for values guaranteed to be set before use (e.g. injected fields, test setup)
+- `by lazy` for expensive values computed on first access
+
+### Class Layout
+
+1. Properties and `init` blocks
+2. Secondary constructors
+3. Functions (public first, helpers below in order of use)
+4. `companion object` last
+
+Keep related members together; don't sort by visibility.
 
 ---
 
-## Object Calisthenics (9 Rules)
+## Object Calisthenics (adapted to Kotlin)
 
-Exercises to improve OO design. Follow strictly during practice, relax slightly in production.
+Exercises to improve OO design. Each rule keeps its **intent**, expressed in idiomatic Kotlin. Treat them as strong guidelines, not as reasons to write unidiomatic code.
 
-### 1. One Level of Indentation per Method
+### 1. Shallow Nesting
 
-```typescript
+```kotlin
 // BAD: Multiple levels
-function process(orders: Order[]) {
-  for (const order of orders) {
-    if (order.isValid()) {
-      for (const item of order.items) {
-        if (item.inStock) {
-          // process...
+fun process(orders: List<Order>) {
+    for (order in orders) {
+        if (order.isValid) {
+            for (item in order.items) {
+                if (item.isInStock) {
+                    ship(item)
+                }
+            }
         }
-      }
     }
-  }
 }
 
-// GOOD: Extract methods
-function process(orders: Order[]) {
-  orders.filter(o => o.isValid()).forEach(processOrder);
+// GOOD: Collection operations and extraction
+fun process(orders: List<Order>) {
+    orders.filter { order -> order.isValid }.forEach(::processOrder)
 }
 
-function processOrder(order: Order) {
-  order.items.filter(i => i.inStock).forEach(processItem);
-}
-```
-
-### 2. Don't Use the ELSE Keyword
-
-Use early returns, guard clauses, or polymorphism.
-
-```typescript
-// BAD: else
-function getDiscount(user: User): number {
-  if (user.isPremium) {
-    return 20;
-  } else {
-    return 0;
-  }
-}
-
-// GOOD: Early return
-function getDiscount(user: User): number {
-  if (user.isPremium) return 20;
-  return 0;
+private fun processOrder(order: Order) {
+    order.items.filter { item -> item.isInStock }.forEach(::ship)
 }
 ```
 
-### 3. Wrap All Primitives and Strings
+### 2. Prefer Expressions and Early Returns over `else` Blocks
 
-Primitives should be wrapped in domain objects when they have meaning.
+The original rule "don't use `else`" exists to avoid nested branching. In Kotlin, keep that intent:
 
-```typescript
+```kotlin
+// BAD: Statement-style branching with mutation
+fun getDiscount(user: User): Int {
+    var discount: Int
+    if (user.isPremium) {
+        discount = PREMIUM_DISCOUNT
+    } else {
+        discount = 0
+    }
+    return discount
+}
+
+// GOOD: Expression
+fun getDiscount(user: User): Int = if (user.isPremium) PREMIUM_DISCOUNT else 0
+```
+
+- Guard clauses and `?: return` for preconditions
+- `if`/`else` and `when` **as expressions** are idiomatic and encouraged
+- Avoid `else` blocks that hide long logic - extract or return early
+
+### 3. Wrap Meaningful Primitives
+
+Wrap primitives in domain types when they carry **meaning or invariants** - not every primitive.
+
+```kotlin
 // BAD: Primitive obsession
-function createUser(email: string, age: number) { }
+fun createUser(email: String, age: Int) {}
 
-// GOOD: Value objects
-class Email {
-  constructor(private value: string) {
-    if (!this.isValid(value)) throw new InvalidEmail();
-  }
-  private isValid(email: string): boolean { ... }
+// GOOD: Value classes (zero runtime overhead)
+@JvmInline
+value class Email(val value: String) {
+    init { require(EMAIL_PATTERN.matches(value)) { "Invalid email" } }
 }
 
-class Age {
-  constructor(private value: number) {
-    if (value < 0 || value > 150) throw new InvalidAge();
-  }
+@JvmInline
+value class Age(val years: Int) {
+    init { require(years in VALID_AGE_RANGE) { "Invalid age: $years" } }
 }
 
-function createUser(email: Email, age: Age) { }
+fun createUser(email: Email, age: Age) {}
 ```
+
+Always wrap: IDs, emails, money, quantities with units. Use a `data class` for multi-field values (`Money(amount, currency)`).
 
 ### 4. First-Class Collections
 
-Any class with a collection should have no other instance variables.
+When a collection has its own rules, give it its own class:
 
-```typescript
-// BAD: Collection mixed with other state
-class Order {
-  items: OrderItem[] = [];
-  customerId: string;
-  total: number;
+```kotlin
+class OrderItems(private val items: List<OrderItem> = emptyList()) {
+    val total: Money get() = items.fold(Money.ZERO) { sum, item -> sum + item.price }
+    val isEmpty: Boolean get() = items.isEmpty()
+    fun add(item: OrderItem): OrderItems = OrderItems(items + item)
 }
 
-// GOOD: Collection is its own class
-class OrderItems {
-  constructor(private items: OrderItem[] = []) {}
-
-  add(item: OrderItem): void { ... }
-  total(): Money { ... }
-  isEmpty(): boolean { ... }
-}
-
-class Order {
-  constructor(
-    private items: OrderItems,
-    private customerId: CustomerId
-  ) {}
-}
+data class Order(val id: OrderId, val customerId: CustomerId, val items: OrderItems)
 ```
 
-### 5. One Dot per Line (Law of Demeter)
+### 5. Law of Demeter
 
-Don't chain through object graphs.
+Don't reach through object graphs:
 
-```typescript
-// BAD: Train wreck
-const city = order.customer.address.city;
+```kotlin
+// BAD: Train wreck through domain objects
+val city = order.customer.address.city
 
-// GOOD: Tell, don't ask
-const city = order.getShippingCity();
+// GOOD: Ask the immediate friend
+val city = order.shippingCity
+```
+
+Chained calls on collections, Flows, and builders are idiomatic and fine:
+
+```kotlin
+val names = users.filter { user -> user.isActive }.map { user -> user.name }.sorted()
 ```
 
 ### 6. Don't Abbreviate
 
 If a name is too long to type, the class is doing too much.
 
-```typescript
+```kotlin
 // BAD
-const custRepo = new CustRepo();
-const ord = new Ord();
+val custRepo = CustRepo()
 
 // GOOD
-const customerRepository = new CustomerRepository();
-const order = new Order();
+val customerRepository = CustomerRepository()
 ```
 
 ### 7. Keep All Entities Small
 
-- Classes: < 50 lines
-- Methods: < 10 lines
-- Files: < 100 lines
+Guidelines, not hard limits:
+- Functions: ~10-15 lines
+- Classes: small and focused on one responsibility
+- Files: one main class (plus closely related small types)
 
-If larger, it's probably doing too much. Split it.
+If larger, it's probably doing too much. Split it - unless splitting makes it harder to read.
 
-### 8. No Classes with More Than Two Instance Variables
+### 8. High Cohesion over Instance-Variable Limits
 
-Forces small, focused classes.
+The original "max two instance variables" rule pushes toward small, cohesive classes. In Kotlin, `data class`es and primary-constructor properties are normal (and required by tools like `@Parcelize`). Keep the intent:
+- If a class has many properties, check whether they form smaller concepts (`Address`, `DateRange`)
+- If methods only use a subset of properties, split the class
 
-```typescript
-// BAD: Too many variables
-class Order {
-  id: string;
-  customerId: string;
-  items: Item[];
-  total: number;
-  status: string;
-}
+### 9. Behavior over Exposed Mutable State
 
-// GOOD: Composed of smaller objects
-class Order {
-  constructor(
-    private id: OrderId,
-    private details: OrderDetails
-  ) {}
-}
+Kotlin properties replace getters/setters - use them. The intent is: **tell objects what to do instead of manipulating their state from outside.**
 
-class OrderDetails {
-  constructor(
-    private customer: Customer,
-    private lineItems: LineItems
-  ) {}
-}
-```
-
-### 9. No Getters/Setters/Properties
-
-Objects should have behavior, not just data. Tell objects what to do.
-
-```typescript
-// BAD: Data bag with getters
+```kotlin
+// BAD: Caller manipulates state
 class Account {
-  getBalance(): number { return this.balance; }
-  setBalance(value: number) { this.balance = value; }
+    var balance: Money = Money.ZERO
 }
 
-// Caller does the work
-if (account.getBalance() >= amount) {
-  account.setBalance(account.getBalance() - amount);
+if (account.balance >= amount) {
+    account.balance = account.balance - amount
 }
 
-// GOOD: Behavior-rich object
-class Account {
-  withdraw(amount: Money): WithdrawResult {
-    if (!this.canWithdraw(amount)) {
-      return WithdrawResult.insufficientFunds();
+// GOOD: Behavior-rich object, read-only exposure
+class Account(initialBalance: Money) {
+    var balance: Money = initialBalance
+        private set
+
+    fun withdraw(amount: Money): WithdrawResult {
+        if (balance < amount) return WithdrawResult.InsufficientFunds
+        balance -= amount
+        return WithdrawResult.Success(balance)
     }
-    this.balance = this.balance.subtract(amount);
-    return WithdrawResult.success();
-  }
 }
-
-// Caller tells, object decides
-const result = account.withdraw(amount);
 ```
+
+- No public `var` for state with invariants; use `private set` or immutable data + `copy()`
 
 ---
 
@@ -683,61 +731,74 @@ const result = account.withdraw(amount);
 
 **Only write comments to explain WHY, not WHAT or HOW.**
 
-Code explains what and how. Comments explain business reasons, non-obvious decisions, or warnings.
-
-```typescript
+```kotlin
 // BAD: Explains what (redundant)
 // Add 1 to counter
-counter++;
+counter++
 
 // GOOD: Explains why
-// Compensate for 0-based indexing in legacy API
-counter++;
+// Legacy API uses 1-based page numbers
+val page = pageIndex + 1
 ```
 
 ### Prefer Self-Documenting Code
 
-Instead of commenting, rename to make intent clear.
-
-```typescript
+```kotlin
 // BAD: Comment needed
 // Check if user can access premium features
-if (user.subscriptionLevel >= 2 && !user.isBanned) { }
+if (user.subscriptionLevel >= 2 && !user.isBanned) {}
 
 // GOOD: Self-documenting
-if (user.canAccessPremiumFeatures()) { }
+if (user.canAccessPremiumFeatures) {}
 ```
+
+### KDoc
+
+Write KDoc for public APIs of shared modules and libraries; skip it for obvious members.
 
 ---
 
 ## Formatting
+
+- **4 spaces** indentation, no tabs
+- **100 characters** max line length
+- K&R braces; braces for multi-line `if`/`for`/`when` branches
+- **Trailing commas** in multi-line declarations and calls
+- No wildcard imports, no semicolons
+- Break lines **before** `.`, `?.`, `::` and **after** binary operators
+- Long signatures: one parameter per line
+
+```kotlin
+fun createOrder(
+    customerId: CustomerId,
+    items: List<OrderItem>,
+    deliveryAddress: Address,
+): Order {
+    // ...
+}
+```
 
 ### Vertical Spacing
 - Related code together
 - Blank lines between concepts
 - Most important/public at top
 
-### Horizontal Spacing
-- Consistent indentation
-- Space around operators
-- Max line length ~80-120 characters
-
 ### Storytelling
 Code should read top-to-bottom like a story. High-level at top, details below.
 
-```typescript
-class OrderProcessor {
-  // Public API first
-  process(order: Order): ProcessResult {
-    this.validate(order);
-    this.calculateTotals(order);
-    return this.save(order);
-  }
+```kotlin
+class OrderProcessor(/* ... */) {
+    // Public API first
+    fun process(order: Order): ProcessResult {
+        validate(order)
+        val total = calculateTotal(order)
+        return save(order, total)
+    }
 
-  // Supporting methods below, in order of appearance
-  private validate(order: Order): void { ... }
-  private calculateTotals(order: Order): void { ... }
-  private save(order: Order): ProcessResult { ... }
+    // Supporting functions below, in order of appearance
+    private fun validate(order: Order) { /* ... */ }
+    private fun calculateTotal(order: Order): Money { /* ... */ }
+    private fun save(order: Order, total: Money): ProcessResult { /* ... */ }
 }
 ```
 
@@ -745,10 +806,16 @@ class OrderProcessor {
 
 ## Clean Code Checklist
 
+### Readability
+- [ ] Understandable after **one read** by someone new to the codebase
+- [ ] Names reveal **every effect** of a function
+- [ ] No magic numbers; named arguments for `Boolean`s and same-typed parameters
+- [ ] No scope-function chains, nested `it`, or clever one-liners
+
 ### Naming
 - [ ] Use **descriptive** and meaningful names
   - Variables & Properties: Nouns or short phrases with adjectives
-  - Functions & Methods: Verbs or short phrases with adjectives
+  - Functions: Verbs (composables returning `Unit`: nouns)
   - Classes: Nouns
 - [ ] Be as **specific** as necessary and possible
 - [ ] Use **yes/no "questions"** for booleans (e.g. `isValid`)
@@ -757,31 +824,33 @@ class OrderProcessor {
 
 ### Comments & Formatting
 - [ ] **Most comments are bad** - avoid them!
-- [ ] Acceptable comments: legal info, warnings, regex explanations, todos
+- [ ] Acceptable comments: legal info, warnings, regex explanations, *why* explanations
 - [ ] Use **vertical formatting**: keep related concepts close, separate unrelated ones
 - [ ] Write code **top to bottom**: called functions below calling functions
-- [ ] Use **horizontal formatting**: avoid long lines, use indentation for scope
+- [ ] Follow the Kotlin style guide (4 spaces, 100 columns, trailing commas)
 
 ### Functions
-- [ ] **Limit parameters** - fewer is better, use objects to group
+- [ ] **Few positional parameters** - defaults and named arguments
 - [ ] Functions should be **small and do one thing**
   - Abstraction levels in the body should be **one level below** the function name
   - **Don't mix** levels of abstraction
   - But **avoid redundant splitting**!
-- [ ] Stay **DRY** (Don't Repeat Yourself)
+- [ ] Stay **DRY** (Rule of Three)
 - [ ] **Avoid unexpected side effects**
 
 ### Control Structures & Errors
 - [ ] Prefer **positive checks**
 - [ ] Avoid **deep nesting**
-  - Use **guard** statements and fail fast
-  - Use **polymorphism** and factory functions
+  - Use **guard** clauses and `?: return`
+  - Use `if`/`when` **expressions**, exhaustive `when` on `sealed` types
   - **Extract** control structures into separate functions
-- [ ] Use **real errors** (throw/catch) instead of synthetic error codes
+- [ ] Use **real errors** (`require`, `check`, exceptions, `Result`) instead of error codes
+- [ ] No `!!`; never swallow `CancellationException`
 
 ### Objects & Classes
-- [ ] Build either **"real objects"** or **data containers** - don't mix
+- [ ] Build either **objects** or **data holders** - don't mix
 - [ ] Build **small classes** focused on a **single responsibility** (not "single method"!)
 - [ ] Build classes with **high cohesion**
-- [ ] Follow the **Law of Demeter** for real objects (avoid `this.customer.lastPurchase.date`)
-- [ ] Follow the **SOLID principles** (especially SRP and OCP for clean code)
+- [ ] Prefer `val`, read-only types, narrow visibility; never expose mutable state
+- [ ] Follow the **Law of Demeter** for object graphs
+- [ ] Follow the **SOLID principles**

@@ -1,5 +1,13 @@
 # Test-Driven Development
 
+## When TDD Applies
+
+Red-Green-Refactor is for **new or changed behavior**, not for every file touch.
+
+- **In scope:** use cases, repositories, data sources, ViewModels, and other JVM-testable logic. The three laws below apply here.
+- **UI:** test screen behavior and state (a stateless composable, or the ViewModel state). Do not run a fake Red-Green-Refactor cycle for layout, styling, copy, or a one-line fix with no behavior change.
+- **Debugging:** write a failing test when the bug is a behavior you can express. Do not block the fix on a test when the failure cannot be reproduced in a unit or screen test.
+
 ## The Core Loop
 
 ```
@@ -12,29 +20,25 @@ Write a failing test that describes the behavior you want. The test should:
 - Describe WHAT, not HOW
 - Be a concrete example, not an abstract statement
 
-```typescript
+```kotlin
 // BAD: Abstract
-it('can add numbers', () => { ... });
+@Test fun canAddNumbers() { /* ... */ }
 
 // GOOD: Concrete example
-it('when adding 2 + 3, returns 5', () => { ... });
+@Test fun add_twoAndThree_returnsFive() { /* ... */ }
 ```
 
 ### GREEN Phase
 Write the **simplest possible code** to make the test pass. Two strategies:
 
 1. **Fake It** - Return a hardcoded value
-   ```typescript
-   add(a: number, b: number): number {
-     return 5; // Simplest thing!
-   }
+   ```kotlin
+   fun add(first: Int, second: Int): Int = 5 // Simplest thing!
    ```
 
 2. **Obvious Implementation** - If you know the solution
-   ```typescript
-   add(a: number, b: number): number {
-     return a + b;
-   }
+   ```kotlin
+   fun add(first: Int, second: Int): Int = first + second
    ```
 
 **Prefer Fake It** when learning or unsure. Let more tests drive the real implementation.
@@ -42,9 +46,10 @@ Write the **simplest possible code** to make the test pass. Two strategies:
 ### REFACTOR Phase
 This is where **design happens**. Look for:
 - Duplication (but wait for Rule of Three)
-- Long methods to extract
+- Long functions to extract
 - Poor names to improve
 - Complex conditions to simplify
+- Anything a new reader would struggle to understand
 
 ## The Three Laws of TDD
 
@@ -58,7 +63,7 @@ This is where **design happens**. Look for:
 
 Why? Wrong abstractions are worse than duplication. Wait for the pattern to emerge.
 
-```typescript
+```kotlin
 // Duplication #1 - Leave it
 // Duplication #2 - Note it, leave it
 // Duplication #3 - NOW extract it
@@ -76,8 +81,8 @@ When going from RED to GREEN, prefer simpler transformations:
 
 | Priority | Transformation |
 |----------|----------------|
-| 1 | {} → nil |
-| 2 | nil → constant |
+| 1 | {} → null |
+| 2 | null → constant |
 | 3 | constant → variable |
 | 4 | unconditional → conditional |
 | 5 | scalar → collection |
@@ -90,20 +95,22 @@ Higher priority = simpler. Avoid jumping to complex transformations too early.
 
 Structure every test:
 
-```typescript
-it('calculates total with discount', () => {
-  // ARRANGE - Set up the world
-  const order = new Order();
-  order.addItem({ price: 100 });
-  const discount = new PercentDiscount(10);
+```kotlin
+@Test
+fun calculateTotal_tenPercentDiscount_returnsNinety() {
+    // Arrange - Set up the world
+    val order = Order(items = listOf(OrderItem(price = Money.of(100))))
+    val discount = PercentDiscount(percent = 10)
 
-  // ACT - Execute the behavior
-  const total = order.calculateTotal(discount);
+    // Act - Execute the behavior
+    val total = order.calculateTotal(discount)
 
-  // ASSERT - Verify the outcome
-  expect(total).toBe(90);
-});
+    // Assert - Verify the outcome
+    assertEquals(Money.of(90), total)
+}
 ```
+
+`// Given / When / Then` comments are an equivalent convention used in the official Android samples.
 
 ## Writing Tests Backwards
 
@@ -118,35 +125,47 @@ Sometimes it helps to write AAA in reverse:
 - Provide **concrete examples**, not abstract statements
 - **One example per test** for easy debugging
 - Avoid leaking implementation details
+- Format: `subjectUnderTest_trigger_expectedResult` (underscores allowed in test names)
+- **Don't use backtick names with spaces** - the Android Kotlin style guide forbids them because Android doesn't fully support them
 
-```typescript
+```kotlin
 // BAD: Technical, implementation-focused
-it('should set the data property to 1', () => { ... });
+@Test fun setsDataPropertyToOne() { /* ... */ }
 
 // GOOD: Behavior-focused, domain language
-it('should recognize "mom" as a palindrome', () => { ... });
+@Test fun isPalindrome_mom_returnsTrue() { /* ... */ }
+@Test fun login_wrongPassword_showsInvalidCredentialsMessage() { /* ... */ }
 ```
 
 ## Classic vs Mockist TDD
 
 **Classic (Detroit/Chicago) TDD:**
-- Test with real dependencies
-- Higher confidence, slower tests
-- Best for: Pure functions, integration tests
+- Test with real collaborators or **fakes**
+- Higher confidence, tests survive refactoring
+- Best for: domain logic, use cases, ViewModels with fake repositories
 
 **Mockist (London) TDD:**
-- Mock external dependencies
-- Faster tests, more isolated
-- Best for: Classes with infrastructure dependencies
+- Mock collaborators and verify interactions
+- More isolated, but coupled to implementation details
+- Best for: verifying an interaction that *is* the behavior (e.g. "analytics event was sent")
 
-Start with Classic TDD to learn the technique. Add mocks when testing code with databases, APIs, etc.
+**Official Android guidance prefers fakes over mocks.** Start with classic TDD and fakes. If the project already uses a mocking library (MockK, Mockito), keep using it where it fits - don't migrate test suites unless asked.
+
+## TDD on Android
+
+- Drive **ViewModels, use cases, repositories, and data sources** with local JVM tests (`src/test`) - they run in milliseconds
+- Keep Android framework types out of these classes so they stay testable without a device
+- Use `runTest` and a `MainDispatcherRule` for coroutines (see [coroutines-flow.md](coroutines-flow.md))
+- For UI behavior, test the stateless screen (state in, events out) or the ViewModel state. Skip TDD for layout, styling, and copy
+- Don't TDD Activities/Fragments - they should contain no logic
 
 ## Common Mistakes
 
-1. **Writing code before tests** - Violates the fundamental principle
+1. **Writing in-scope behavior before a test** - The three laws apply to use cases, repositories, data sources, ViewModels, and expressed bugs. They do not apply to layout, styling, copy, or a fix that cannot be reproduced in a test
 2. **Writing too much test** - Just enough to fail
 3. **Writing too much code** - Just enough to pass
 4. **Skipping refactor** - This is where design lives
 5. **Testing implementation** - Test behavior, not how it's done
 6. **Abstract test names** - Use concrete examples
 7. **Extracting too early** - Wait for Rule of Three
+8. **Hardcoded dispatchers** - Make coroutine code untestable; inject them

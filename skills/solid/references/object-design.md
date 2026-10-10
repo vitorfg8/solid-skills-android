@@ -8,8 +8,8 @@ The key insight: **Objects are defined by their responsibilities, not their data
 
 Start with:
 1. **Nouns** in requirements → candidate objects
-2. **Verbs** → candidate methods/behaviors
-3. **Domain concepts** → value objects
+2. **Verbs** → candidate functions/behaviors
+3. **Domain concepts** → value objects (`value class`, `data class`)
 
 ### Finding Responsibilities
 
@@ -20,22 +20,22 @@ Each object should answer:
 
 ### Object Stereotypes
 
-Every class fits one (or maybe two) stereotypes:
+Every class fits one (or maybe two) stereotypes. On Android they map onto familiar roles:
 
-| Stereotype | Purpose | Example |
-|------------|---------|---------|
-| **Information Holder** | Knows things, holds data | `User`, `Product`, `Address` |
+| Stereotype | Purpose | Android examples |
+|------------|---------|------------------|
+| **Information Holder** | Knows things, holds data | `User`, `Article` (`data class`), `NewsUiState` |
 | **Structurer** | Maintains relationships | `OrderItems`, `UserGroup` |
-| **Service Provider** | Performs work | `PaymentProcessor`, `EmailSender` |
-| **Coordinator** | Orchestrates workflow | `OrderFulfillmentService` |
-| **Controller** | Makes decisions, delegates | `CheckoutController` |
-| **Interfacer** | Transforms between systems | `UserAPIAdapter`, `DatabaseMapper` |
+| **Service Provider** | Performs work | `FormatDateUseCase`, `NewsRemoteDataSource` |
+| **Coordinator** | Orchestrates workflow | `OfflineFirstNewsRepository` (local + remote sources) |
+| **Controller** | Makes decisions, delegates | `NewsViewModel` (events → state) |
+| **Interfacer** | Transforms between systems | Mappers (`asExternalModel()`), API/DAO wrappers |
 
 ### The Two Questions
 
 For every class, ask:
-1. **"What pattern is this?"** - Which stereotype? Which design pattern?
-2. **"Is it doing too much?"** - Check object calisthenics rules
+1. **"What role is this?"** - Which stereotype? Which architectural role?
+2. **"Is it doing too much?"** - Check SRP and cohesion
 
 If you can't answer clearly, the class needs refactoring.
 
@@ -45,17 +45,17 @@ If you can't answer clearly, the class needs refactoring.
 
 **Command objects to do work. Don't interrogate them and do the work yourself.**
 
-```typescript
+```kotlin
 // BAD: Asking, then doing
-if (account.getBalance() >= amount) {
-  account.setBalance(account.getBalance() - amount);
-  // more logic here...
+if (account.balance >= amount) {
+    account.balance = account.balance - amount
+    // more logic here...
 }
 
 // GOOD: Telling
-const result = account.withdraw(amount);
-if (result.isSuccess()) {
-  // ...
+when (val result = account.withdraw(amount)) {
+    is WithdrawResult.Success -> showNewBalance(result.newBalance)
+    WithdrawResult.InsufficientFunds -> showInsufficientFundsMessage()
 }
 ```
 
@@ -65,39 +65,42 @@ The object that has the data should have the behavior.
 
 ## Design by Contract (DbC)
 
-Every method has:
-- **Preconditions** - What must be true BEFORE calling
+Every function has:
+- **Preconditions** - What must be true BEFORE calling (`require`)
 - **Postconditions** - What will be true AFTER calling
-- **Invariants** - What is ALWAYS true about the object
+- **Invariants** - What is ALWAYS true about the object (`init { require(...) }`, `check`)
 
-```typescript
-class BankAccount {
-  private balance: Money;
+```kotlin
+sealed interface WithdrawResult {
+    data class Success(val newBalance: Money) : WithdrawResult
+    data object InsufficientFunds : WithdrawResult
+}
 
-  // INVARIANT: balance is never negative
+class BankAccount(initialBalance: Money) {
+    // INVARIANT: balance is never negative
+    var balance: Money = initialBalance
+        private set
 
-  // PRECONDITION: amount > 0
-  // POSTCONDITION: balance decreased by amount OR error returned
-  withdraw(amount: Money): WithdrawResult {
-    if (amount.isNegativeOrZero()) {
-      return WithdrawResult.invalidAmount();
+    init { require(initialBalance >= Money.ZERO) { "Balance cannot be negative" } }
+
+    // PRECONDITION: amount > 0
+    // POSTCONDITION: balance decreased by amount OR InsufficientFunds returned
+    fun withdraw(amount: Money): WithdrawResult {
+        require(amount > Money.ZERO) { "Amount must be positive" }
+        if (balance < amount) return WithdrawResult.InsufficientFunds
+        balance -= amount
+        return WithdrawResult.Success(balance)
     }
-
-    if (this.balance.isLessThan(amount)) {
-      return WithdrawResult.insufficientFunds();
-    }
-
-    this.balance = this.balance.minus(amount);
-    return WithdrawResult.success(this.balance);
-  }
 }
 ```
+
+Programming errors (violated preconditions) throw; expected business outcomes are modeled as results.
 
 ---
 
 ## Composition Over Inheritance
 
-**Prefer composing objects over extending classes.**
+**Prefer composing objects over extending classes.** Kotlin classes are `final` by default - keep it that way unless you design for inheritance.
 
 ### Why Inheritance is Problematic:
 - Tight coupling between parent and child
@@ -107,30 +110,34 @@ class BankAccount {
 
 ### When to Use Inheritance:
 - True "is-a" relationship (rare)
-- Framework requirements
+- Framework requirements (`ViewModel`, `Activity`, `CoroutineWorker`)
 - Template Method pattern (intentional)
+- `sealed` hierarchies modeling a closed set of cases
+
+Avoid "base" classes (`BaseActivity`, `BaseViewModel`) that accumulate shared behavior - use composition, delegation, or extension functions instead.
 
 ### Prefer Composition:
-```typescript
+```kotlin
 // BAD: Inheritance
-class PremiumUser extends User {
-  getDiscount(): number { return 20; }
-}
+open class User { open val discountPercent: Int = 0 }
+class PremiumUser : User() { override val discountPercent: Int = 20 }
 
 // GOOD: Composition
-class User {
-  constructor(private discountPolicy: DiscountPolicy) {}
+fun interface DiscountPolicy {
+    fun calculateDiscount(orderValue: Money): Money
+}
 
-  getDiscount(): number {
-    return this.discountPolicy.calculate();
-  }
+class User(private val discountPolicy: DiscountPolicy) {
+    fun discountFor(orderValue: Money): Money = discountPolicy.calculateDiscount(orderValue)
 }
 
 // Now discount behavior is pluggable
-new User(new PremiumDiscount());
-new User(new StandardDiscount());
-new User(new NoDiscount());
+User(PremiumDiscount())
+User(StandardDiscount())
+User(NoDiscount)
 ```
+
+Kotlin's class delegation (`class LoggingRepository(private val delegate: NewsRepository) : NewsRepository by delegate`) makes composition cheap.
 
 ---
 
@@ -138,21 +145,21 @@ new User(new NoDiscount());
 
 **Only talk to your immediate friends.**
 
-A method should only call:
-1. Methods on `this`
-2. Methods on parameters
-3. Methods on objects it creates
-4. Methods on its direct components
+A function should only call:
+1. Functions on `this`
+2. Functions on parameters
+3. Functions on objects it creates
+4. Functions on its direct components
 
-```typescript
+```kotlin
 // BAD: Reaching through objects
-order.getCustomer().getAddress().getCity();
+order.customer.address.city
 
 // GOOD: Ask the immediate friend
-order.getShippingCity();
+order.shippingCity
 ```
 
-This reduces coupling - changes to `Address` don't ripple through all callers.
+This reduces coupling - changes to `Address` don't ripple through all callers. Chains of collection or Flow operators are not violations.
 
 ---
 
@@ -161,37 +168,38 @@ This reduces coupling - changes to `Address` don't ripple through all callers.
 **Hide internal details, expose behavior.**
 
 ### Levels of Encapsulation:
-1. **Data** - private fields, no direct access
+1. **Data** - `private` properties, read-only exposure
 2. **Implementation** - how things work internally
-3. **Type** - concrete class hidden behind interface
-4. **Design** - architectural decisions hidden from clients
+3. **Type** - concrete class hidden behind an interface
+4. **Design** - architectural decisions hidden from clients (`internal` in modules)
 
-```typescript
+```kotlin
 // BAD: Exposed internals
 class Order {
-  public items: Item[] = [];
-  public total: number = 0;
+    val items = mutableListOf<OrderItem>()
+    var total: Money = Money.ZERO
 }
 
 // Client can corrupt state
-order.items.push(item);
-order.total = -999; // Oops!
+order.items.add(item) // total is now wrong
+order.total = Money.of(-999)
 
 // GOOD: Encapsulated
 class Order {
-  private items: OrderItems;
-  private total: Money;
+    private val _items = mutableListOf<OrderItem>()
+    val items: List<OrderItem> get() = _items
 
-  addItem(item: Item): void {
-    this.items.add(item);
-    this.recalculateTotal();
-  }
+    var total: Money = Money.ZERO
+        private set
 
-  getTotal(): Money {
-    return this.total; // Returns copy or immutable
-  }
+    fun addItem(item: OrderItem) {
+        _items += item
+        total += item.price
+    }
 }
 ```
+
+The same rule applies to ViewModels: `private val _uiState = MutableStateFlow(...)` and `val uiState: StateFlow<...>`.
 
 ---
 
@@ -199,35 +207,31 @@ class Order {
 
 **Replace conditionals with types.**
 
-```typescript
-// BAD: Type checking
-function calculateShipping(method: string, value: number): number {
-  if (method === 'standard') return value < 50 ? 5 : 0;
-  if (method === 'express') return 15;
-  if (method === 'overnight') return 25;
-  throw new Error('Unknown method');
+```kotlin
+// BAD: Type checking with strings
+fun calculateShipping(method: String, orderValue: Money): Money = when (method) {
+    "standard" -> if (orderValue < FREE_SHIPPING_THRESHOLD) Money.of(5) else Money.ZERO
+    "express" -> Money.of(15)
+    "overnight" -> Money.of(25)
+    else -> throw IllegalArgumentException("Unknown method")
 }
 
-// GOOD: Polymorphism
-interface ShippingMethod {
-  calculateCost(orderValue: number): number;
+// GOOD (open set): interface - new methods without touching existing code
+fun interface ShippingMethod {
+    fun calculateCost(orderValue: Money): Money
 }
 
-class StandardShipping implements ShippingMethod {
-  calculateCost(orderValue: number): number {
-    return orderValue < 50 ? 5 : 0;
-  }
+// GOOD (closed set): sealed type - the compiler enforces exhaustive handling
+sealed interface Shipping {
+    data object Standard : Shipping
+    data object Express : Shipping
+    data object Overnight : Shipping
 }
 
-class ExpressShipping implements ShippingMethod {
-  calculateCost(orderValue: number): number {
-    return 15;
-  }
-}
-
-// Usage - no conditionals
-function calculateShipping(method: ShippingMethod, value: number): number {
-  return method.calculateCost(value);
+fun Shipping.cost(orderValue: Money): Money = when (this) {
+    Shipping.Standard -> if (orderValue < FREE_SHIPPING_THRESHOLD) Money.of(5) else Money.ZERO
+    Shipping.Express -> Money.of(15)
+    Shipping.Overnight -> Money.of(25)
 }
 ```
 
@@ -238,51 +242,36 @@ function calculateShipping(method: ShippingMethod, value: number): number {
 ### Value Objects
 - Defined by their attributes (no identity)
 - Immutable
-- Comparable by value
+- Compared by value (`data class` / `value class` give you `equals` for free)
 - Examples: `Money`, `Email`, `Address`, `DateRange`
 
-```typescript
-class Money {
-  constructor(
-    private readonly amount: number,
-    private readonly currency: string
-  ) {}
-
-  equals(other: Money): boolean {
-    return this.amount === other.amount &&
-           this.currency === other.currency;
-  }
-
-  add(other: Money): Money {
-    if (this.currency !== other.currency) {
-      throw new CurrencyMismatch();
+```kotlin
+data class Money(val amount: BigDecimal, val currency: Currency) {
+    operator fun plus(other: Money): Money {
+        require(currency == other.currency) { "Currency mismatch: $currency vs ${other.currency}" }
+        return copy(amount = amount + other.amount)
     }
-    return new Money(this.amount + other.amount, this.currency);
-  }
+}
+
+@JvmInline
+value class Email(val value: String) {
+    init { require(EMAIL_PATTERN.matches(value)) { "Invalid email" } }
 }
 ```
 
 ### Entities
 - Have identity (survives attribute changes)
-- Usually mutable (via methods)
-- Comparable by identity
+- Compared by identity
 - Examples: `User`, `Order`, `Product`
+- In Kotlin, entities are often immutable `data class`es updated with `copy()`, keyed by their ID
 
-```typescript
-class User {
-  constructor(
-    private readonly id: UserId,
-    private email: Email,
-    private name: Name
-  ) {}
-
-  equals(other: User): boolean {
-    return this.id.equals(other.id); // Identity comparison
-  }
-
-  changeEmail(newEmail: Email): void {
-    this.email = newEmail; // Still same user
-  }
+```kotlin
+data class User(
+    val id: UserId,
+    val email: Email,
+    val name: String,
+) {
+    fun changeEmail(newEmail: Email): User = copy(email = newEmail) // still the same user (same id)
 }
 ```
 
@@ -296,33 +285,26 @@ A cluster of objects treated as a single unit for data changes.
 - External code only references the root
 - Root enforces invariants for the entire cluster
 
-```typescript
+```kotlin
 // Order is the aggregate root
-class Order {
-  private items: OrderItem[] = [];
+class Order(val id: OrderId) {
+    private val _items = mutableListOf<OrderItem>()
+    val items: List<OrderItem> get() = _items
 
-  // All access through the root
-  addItem(product: Product, quantity: number): void {
-    const item = new OrderItem(product, quantity);
-    this.items.push(item);
-    this.validateTotal();
-  }
-
-  removeItem(itemId: ItemId): void {
-    this.items = this.items.filter(i => !i.id.equals(itemId));
-  }
-
-  // Root enforces invariants
-  private validateTotal(): void {
-    if (this.calculateTotal().exceeds(MAX_ORDER_VALUE)) {
-      throw new OrderTotalExceeded();
+    // All changes go through the root
+    fun addItem(product: Product, quantity: Int) {
+        val newItem = OrderItem(product, quantity)
+        require(calculateTotal() + newItem.subtotal <= MAX_ORDER_VALUE) { "Order total exceeded" }
+        _items += newItem
     }
-  }
+
+    fun removeItem(itemId: ItemId) {
+        _items.removeAll { item -> item.id == itemId }
+    }
+
+    fun calculateTotal(): Money = _items.fold(Money.ZERO) { sum, item -> sum + item.subtotal }
 }
 
-// BAD: Accessing items directly
-order.items.push(new OrderItem(...)); // Bypasses validation!
-
-// GOOD: Through the root
-order.addItem(product, 2); // Validation happens
+// Callers can't bypass validation: `items` is read-only
+order.addItem(product, quantity = 2)
 ```

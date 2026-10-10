@@ -7,12 +7,14 @@ Inherent to the problem domain. Cannot be removed, only managed.
 - Business rules
 - Domain logic
 - User requirements
+- Platform realities (lifecycle, process death, offline)
 
 ### Accidental Complexity
 Introduced by our solutions. CAN and SHOULD be minimized.
 - Poor abstractions
-- Unnecessary indirection
+- Unnecessary indirection (use cases that only forward calls, interfaces with one implementation and no test need)
 - Framework ceremony
+- Clever code that hides intent
 - Technical debt
 
 **Goal: Minimize accidental complexity while clearly expressing essential complexity.**
@@ -33,7 +35,7 @@ Code is hard to understand, requires holding too much in memory.
 
 **Symptom:** "I need to understand 10 other classes to understand this one."
 
-**Cause:** Tight coupling, hidden dependencies, unclear naming.
+**Cause:** Tight coupling, hidden dependencies, unclear naming, implicit behavior.
 
 ### 3. Unknown Unknowns
 Behavior is surprising, side effects are hidden.
@@ -75,20 +77,20 @@ Respect future readers (including yourself). Write for humans first.
 3. Prefer boring, well-understood approaches
 4. Question every abstraction
 
-```typescript
+```kotlin
 // Over-engineered
-class UserServiceFactoryProvider {
-  private static instance: UserServiceFactoryProvider;
-
-  static getInstance(): UserServiceFactoryProvider { ... }
-  createFactory(): UserServiceFactory { ... }
+abstract class BaseUseCase<in P, out R> {
+    abstract suspend fun execute(params: P): R
 }
+class GetUserUseCaseFactoryProvider { /* ... */ }
 
 // KISS
-class UserService {
-  getUser(id: string): User { ... }
+class GetUserUseCase(private val userRepository: UserRepository) {
+    suspend operator fun invoke(id: UserId): User = userRepository.getUser(id)
 }
 ```
+
+The domain layer itself is optional - add use cases only when they add value.
 
 ---
 
@@ -108,22 +110,23 @@ class UserService {
 3. **Cognitive load** - More to understand
 4. **Wrong abstraction** - Guessing future needs incorrectly
 
-```typescript
+```kotlin
 // YAGNI violation: Building for hypothetical needs
-class User {
-  // "We might need these someday"
-  middleName?: string;
-  secondaryEmail?: string;
-  faxNumber?: string;
-  linkedinProfile?: string;
-  twitterHandle?: string;
-}
+data class User(
+    val name: String,
+    val email: Email,
+    // "We might need these someday"
+    val middleName: String? = null,
+    val secondaryEmail: Email? = null,
+    val faxNumber: String? = null,
+    val linkedinProfile: String? = null,
+)
 
 // YAGNI: Only what's needed NOW
-class User {
-  name: string;
-  email: Email;
-}
+data class User(
+    val name: String,
+    val email: Email,
+)
 ```
 
 ---
@@ -145,36 +148,36 @@ Duplication #3 → NOW extract it
 ```
 
 ### Example:
-```typescript
+```kotlin
 // First time - leave it
-function processUserOrder(order) {
-  validate(order);
-  calculateTax(order);
-  save(order);
+suspend fun placeUserOrder(order: Order) {
+    validate(order)
+    applyTax(order)
+    orderRepository.saveOrder(order)
 }
 
 // Second time - note the similarity, but leave it
-function processGuestOrder(order) {
-  validate(order);
-  calculateTax(order);
-  save(order);
-  sendGuestEmail(order);
+suspend fun placeGuestOrder(order: Order) {
+    validate(order)
+    applyTax(order)
+    orderRepository.saveOrder(order)
+    sendGuestEmail(order)
 }
 
 // Third time - NOW extract
-function processCorporateOrder(order) {
-  validate(order);
-  calculateTax(order);
-  save(order);
-  applyCorporateDiscount(order);
+suspend fun placeCorporateOrder(order: Order) {
+    validate(order)
+    applyTax(order)
+    orderRepository.saveOrder(order)
+    applyCorporateDiscount(order)
 }
 
 // After three, extract the common parts
-function processOrder(order: Order, postProcessing: (o: Order) => void) {
-  validate(order);
-  calculateTax(order);
-  save(order);
-  postProcessing(order);
+suspend fun placeOrder(order: Order, afterSaving: suspend (Order) -> Unit = {}) {
+    validate(order)
+    applyTax(order)
+    orderRepository.saveOrder(order)
+    afterSaving(order)
 }
 ```
 
@@ -185,51 +188,41 @@ function processOrder(order: Order, postProcessing: (o: Order) => void) {
 > "Each module should address a single concern."
 
 ### Concerns to Separate:
-- **Business logic** vs **Infrastructure**
+- **Business logic** vs **Infrastructure** (database, network, SDKs)
+- **UI** vs **State production** (composables/Views vs ViewModels)
 - **What** (policy) vs **How** (mechanism)
 - **Input** vs **Processing** vs **Output**
-- **Data** vs **Behavior**
 
 ### Example:
-```typescript
-// BAD: Mixed concerns
-class OrderProcessor {
-  process(order: Order) {
-    // Validation
-    if (!order.items.length) throw new Error('Empty');
-
-    // Business logic
-    let total = 0;
-    for (const item of order.items) {
-      total += item.price * item.quantity;
+```kotlin
+// BAD: Mixed concerns in a ViewModel
+class CheckoutViewModel(private val context: Context) : ViewModel() {
+    fun checkout(order: Order) {
+        viewModelScope.launch(Dispatchers.IO) {
+            require(order.items.isNotEmpty())                                  // validation
+            val total = order.items.sumOf { item -> item.price * item.quantity } // business logic
+            AppDatabase.getInstance(context).orderDao().insert(order.toEntity()) // persistence
+            NotificationManagerCompat.from(context).notify(/* ... */)            // notification
+        }
     }
-
-    // Persistence
-    const db = new Database();
-    db.query(`INSERT INTO orders...`);
-
-    // Notification
-    const email = new EmailClient();
-    email.send(order.customer.email, 'Order confirmed');
-  }
 }
 
 // GOOD: Separated concerns
-class OrderProcessor {
-  constructor(
-    private validator: OrderValidator,
-    private calculator: OrderCalculator,
-    private repository: OrderRepository,
-    private notifier: OrderNotifier
-  ) {}
+class PlaceOrderUseCase(
+    private val orderValidator: OrderValidator,
+    private val orderRepository: OrderRepository,
+    private val orderNotifier: OrderNotifier,
+) {
+    suspend operator fun invoke(order: Order): PlaceOrderResult {
+        orderValidator.validate(order)
+        val savedOrder = orderRepository.saveOrder(order)
+        orderNotifier.notifyConfirmation(savedOrder)
+        return PlaceOrderResult.Success(savedOrder)
+    }
+}
 
-  process(order: Order): ProcessResult {
-    this.validator.validate(order);
-    const total = this.calculator.calculateTotal(order);
-    const savedOrder = this.repository.save(order);
-    this.notifier.notifyConfirmation(savedOrder);
-    return ProcessResult.success(savedOrder);
-  }
+class CheckoutViewModel(private val placeOrder: PlaceOrderUseCase) : ViewModel() {
+    // turns the result into UI state
 }
 ```
 
@@ -248,8 +241,10 @@ class OrderProcessor {
 Every time you touch code:
 - Improve one small thing
 - Fix one naming issue
-- Extract one method
+- Extract one function
 - Add one missing test
+
+Improving code is not the same as replacing its libraries - don't migrate libraries as a "cleanup" unless the user asks.
 
 ### When to Pay Down Debt:
 - When it's in your path (you're already there)
@@ -280,7 +275,7 @@ In priority order (from XP):
    - Single source of truth
 
 4. **Minimal**
-   - Fewest classes and methods possible
+   - Fewest classes and functions possible
    - Remove anything unnecessary
 
 If these four are true, the design is simple enough.
