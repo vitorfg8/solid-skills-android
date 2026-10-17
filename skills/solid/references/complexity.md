@@ -60,10 +60,10 @@ Do the simplest thing that could possibly work.
 Fast feedback loops catch complexity early. TDD, CI, code review.
 
 ### 4. Courage
-Refactor aggressively. Don't let complexity accumulate.
+Refactor the code you touch without fear - tests make it safe. Don't let complexity accumulate in your path.
 
 ### 5. Respect
-Respect future readers (including yourself). Write for humans first.
+Respect future readers, human or agent (including yourself). Both read the code with equal weight.
 
 ---
 
@@ -238,13 +238,13 @@ class CheckoutViewModel(private val placeOrder: PlaceOrderUseCase) : ViewModel()
 ### The Boy Scout Rule:
 > "Leave the code better than you found it."
 
-Every time you touch code:
+Inside the code the task already touches:
 - Improve one small thing
 - Fix one naming issue
 - Extract one function
 - Add one missing test
 
-Improving code is not the same as replacing its libraries - don't migrate libraries as a "cleanup" unless the user asks.
+Outside that code, report what you'd improve instead of changing it. Improving code is not the same as replacing its libraries - don't migrate libraries as a "cleanup" unless the user asks.
 
 ### When to Pay Down Debt:
 - When it's in your path (you're already there)

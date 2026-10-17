@@ -17,15 +17,22 @@ Code that is:
 Code has THREE consumers:
 1. **Users** - get their needs met
 2. **Customers** - make or save money
-3. **Developers** - must maintain it
+3. **Maintainers** - developers and agents who must read and change it
 
-Design for all three, but remember: **developers read code 10x more than they write it.**
+Design for all three, but remember: **code is read far more often than it is written**, and humans and agents read it with equal weight.
 
 ---
 
 ## Readability & Explicitness
 
-**Code must be easily readable and understandable by humans, and it must say explicitly what it does.** If a reader has to run, debug, or jump across files to understand a function, the function is not done.
+**Code must be easily readable and understandable by humans and agents alike, and it must say explicitly what it does.** If a reader has to run, debug, or jump across files to understand a function, the function is not done.
+
+What helps one reader helps the other:
+- **Greppable names** - specific, unique names can be found by search; vague ones (`data`, `handle()`) can't
+- **Effects in the name** - nobody has to read the body to learn that a function saves or sends something
+- **Explicit types on public APIs** - the contract is visible without inference
+- **No hidden inputs** - global state, implicit `CompositionLocal`s, or service locators make behavior impossible to predict from the call site
+- **One way to do each thing** - a second pattern for the same job forces every reader to learn both
 
 When readability conflicts with brevity, cleverness, or a size guideline, **readability wins**.
 
@@ -113,7 +120,7 @@ showProfile(user)
 
 ### The one-read test
 
-Before finishing, ask: **"Could a developer new to this codebase explain what this code does after reading it once?"** If not, rename, extract, or simplify. A comment is the last resort and only explains *why*.
+Before finishing, ask: **"Could a developer or agent new to this codebase explain what this code does after reading it once?"** If not, rename, extract, or simplify. A comment is the last resort and only explains *why*.
 
 ---
 
@@ -212,7 +219,7 @@ class User
 | `@Composable` returning `Unit` | PascalCase nouns | `OrderSummaryCard` |
 | Properties, local variables | camelCase nouns | `activeOrders` |
 | Booleans | questions | `isLoading`, `hasError`, `canSubmit` |
-| Constants (`const val`, deeply immutable top-level/`object` `val`) | UPPER_SNAKE_CASE | `MAX_RETRY_COUNT` |
+| Constants (`const val`, deeply immutable top-level/`object` `val`) | UPPER_SNAKE_CASE (PascalCase only if the project's Compose code already uses it, and for `<Component>Defaults` members - see [compose.md](compose.md)) | `MAX_RETRY_COUNT` |
 | Backing properties | `_` prefix | `private val _uiState` |
 | Packages | lowercase, no underscores | `com.example.orders` |
 | Files | PascalCase, named after the main class | `OrderRepository.kt` |
@@ -587,6 +594,8 @@ private fun processOrder(order: Order) {
 }
 ```
 
+The rule counts control flow (`if`/`when`/`for`/lambdas): at most one level per function. Layout nesting in composables (`Column { Row { ... } }`) describes the UI tree and doesn't count - extract a composable when a block deserves its own name, not to reduce indentation.
+
 ### 2. Prefer Expressions and Early Returns over `else` Blocks
 
 The original rule "don't use `else`" exists to avoid nested branching. In Kotlin, keep that intent:
@@ -807,7 +816,7 @@ class OrderProcessor(/* ... */) {
 ## Clean Code Checklist
 
 ### Readability
-- [ ] Understandable after **one read** by someone new to the codebase
+- [ ] Understandable after **one read** by a developer or agent new to the codebase
 - [ ] Names reveal **every effect** of a function
 - [ ] No magic numbers; named arguments for `Boolean`s and same-typed parameters
 - [ ] No scope-function chains, nested `it`, or clever one-liners

@@ -57,6 +57,7 @@ App components (`Activity`, `Fragment`, `Service`, `BroadcastReceiver`, `Content
 // The contract the rest of the app depends on
 interface NewsRepository {
     fun getNewsStream(): Flow<List<Article>>
+    suspend fun getLatestNews(): List<Article>
     suspend fun refreshNews()
 }
 
@@ -67,6 +68,8 @@ class OfflineFirstNewsRepository(
 ) : NewsRepository {
     override fun getNewsStream(): Flow<List<Article>> =
         newsLocalDataSource.getNewsStream().map { entities -> entities.map(ArticleEntity::asExternalModel) }
+
+    override suspend fun getLatestNews(): List<Article> = getNewsStream().first()
 
     override suspend fun refreshNews() {
         val networkArticles = newsRemoteDataSource.fetchLatestNews()
@@ -92,7 +95,7 @@ class GetLatestNewsWithAuthorsUseCase(
     private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     suspend operator fun invoke(): List<ArticleWithAuthor> = withContext(defaultDispatcher) {
-        val articles = newsRepository.fetchLatestNews()
+        val articles = newsRepository.getLatestNews()
         articles.map { article -> ArticleWithAuthor(article, authorsRepository.getAuthor(article.authorId)) }
     }
 }
@@ -245,7 +248,7 @@ core/
 
 - Prefer a single Activity
 - Navigation is UI logic: the UI navigates in response to user events or UI state, not the ViewModel calling a navigator directly
-- Implementation and migrations belong to the `navigation-3` and `navigation-event` skills
+- Navigation library setup and migrations are platform workflows: use a matching Android skill if one is installed (`android skills find navigation`)
 
 ## Cross-Cutting Concerns
 

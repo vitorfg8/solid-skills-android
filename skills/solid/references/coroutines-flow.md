@@ -7,17 +7,19 @@
 ### 1. Inject dispatchers
 
 ```kotlin
-// BAD: hardcoded, untestable
-class NewsRepository(private val newsDataSource: NewsDataSource) {
-    suspend fun loadNews(): List<Article> = withContext(Dispatchers.IO) { newsDataSource.fetchNews() }
+// BAD: hardcoded in the function body, untestable
+class NewsRemoteDataSource(private val blockingNewsApi: BlockingNewsApi) {
+    suspend fun fetchLatestNews(): List<NetworkArticle> =
+        withContext(Dispatchers.IO) { blockingNewsApi.fetchLatestNews() }
 }
 
-// GOOD: injected (a default value is fine)
-class NewsRepository(
-    private val newsDataSource: NewsDataSource,
+// GOOD: injected through the constructor (a default value is fine)
+class NewsRemoteDataSource(
+    private val blockingNewsApi: BlockingNewsApi,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    suspend fun loadNews(): List<Article> = withContext(ioDispatcher) { newsDataSource.fetchNews() }
+    suspend fun fetchLatestNews(): List<NetworkArticle> =
+        withContext(ioDispatcher) { blockingNewsApi.fetchLatestNews() }
 }
 ```
 
@@ -63,9 +65,10 @@ Keep `MutableStateFlow`/`MutableSharedFlow` private; expose `StateFlow`/`SharedF
 ### 5. Data and domain layers expose `suspend` and `Flow`
 
 ```kotlin
-interface ExampleRepository {
-    suspend fun fetchExample(): Example      // one-shot
-    fun getExampleStream(): Flow<Example>    // changes over time
+interface NewsRepository {
+    fun getNewsStream(): Flow<List<Article>>    // changes over time
+    suspend fun getLatestNews(): List<Article>  // one-shot
+    suspend fun refreshNews()                   // one-shot
 }
 ```
 
@@ -202,7 +205,7 @@ class NewsViewModelTest {
     @Test
     fun loadNews_repositoryReturnsArticles_showsArticles() = runTest {
         // Arrange
-        val viewModel = LatestNewsViewModel(GetLatestNewsUseCase(FakeNewsRepository()))
+        val viewModel = LatestNewsViewModel(GetLatestNewsUseCase(FakeNewsRepository(articles = FAKE_ARTICLES)))
         // Act
         viewModel.loadNews()
         // Assert
@@ -223,10 +226,18 @@ class NewsViewModelTest {
 - **Subject consumes a flow:** inject a fake repository whose flow the test controls
 
 ```kotlin
-class FakeNewsRepository : NewsRepository {
-    private val newsFlow = MutableSharedFlow<List<Article>>()
-    suspend fun emit(articles: List<Article>) = newsFlow.emit(articles)
+class FakeNewsRepository(articles: List<Article> = emptyList()) : NewsRepository {
+    private val newsFlow = MutableStateFlow(articles)
+
+    fun emit(articles: List<Article>) {
+        newsFlow.value = articles
+    }
+
     override fun getNewsStream(): Flow<List<Article>> = newsFlow
+
+    override suspend fun getLatestNews(): List<Article> = newsFlow.value
+
+    override suspend fun refreshNews() = Unit
 }
 ```
 

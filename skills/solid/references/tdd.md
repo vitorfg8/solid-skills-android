@@ -8,6 +8,17 @@ Red-Green-Refactor is for **new or changed behavior**, not for every file touch.
 - **UI:** test screen behavior and state (a stateless composable, or the ViewModel state). Do not run a fake Red-Green-Refactor cycle for layout, styling, copy, or a one-line fix with no behavior change.
 - **Debugging:** write a failing test when the bug is a behavior you can express. Do not block the fix on a test when the failure cannot be reproduced in a unit or screen test.
 
+## Verify Before Finishing
+
+Run the unit tests and lint of the module you changed, not only the new test:
+
+```bash
+./gradlew :<module>:testDebugUnitTest   # or ./gradlew :<module>:test
+./gradlew :<module>:lintDebug           # or ./gradlew :<module>:lint
+```
+
+Fix failures you introduced; report pre-existing failures instead of hiding them.
+
 ## The Core Loop
 
 ```
@@ -41,7 +52,7 @@ Write the **simplest possible code** to make the test pass. Two strategies:
    fun add(first: Int, second: Int): Int = first + second
    ```
 
-**Prefer Fake It** when learning or unsure. Let more tests drive the real implementation.
+**Prefer Obvious Implementation** when the solution is clear. Use Fake It only when unsure, and let the next tests drive the real implementation. **Never leave a faked value in finished code.**
 
 ### REFACTOR Phase
 This is where **design happens**. Look for:

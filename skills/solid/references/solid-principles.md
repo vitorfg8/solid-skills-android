@@ -177,7 +177,7 @@ If you see `TODO()`, `throw UnsupportedOperationException()`, or empty overrides
 Tight coupling to specific implementations (database, HTTP client, SDKs, Android framework). Hard to test, hard to swap.
 
 ### How to Apply
-Depend on abstractions and receive implementations through the **constructor**.
+Receive dependencies through the **constructor**. Add an interface where implementations vary (offline-first vs in-memory, real gateway vs fake) or tests need a fake - not for every class. A class with one implementation and no test double can be injected as a concrete class; extract the interface when the second implementation appears.
 
 ```kotlin
 // BAD: Creates its own concrete dependency
@@ -248,4 +248,4 @@ ViewModels and use cases never depend on data sources directly.
 | OCP | Add, don't modify | `when`/`if` chains on type strings |
 | LSP | Subtypes are substitutable | Type checks (`is`) in calling code |
 | ISP | Small, focused interfaces | `TODO()` / empty overrides |
-| DIP | Depend on abstractions | Concrete classes instantiated inside ViewModels/use cases |
+| DIP | Constructor injection; interfaces where implementations vary | Dependencies instantiated inside ViewModels/use cases |

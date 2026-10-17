@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "solid": {
+      "source": "vitorfg8/solid-skills-android",
+      "sourceType": "github",
+      "skillPath": "skills/solid/SKILL.md",
+      "computedHash": "d428084b460603989540852f0cc565d0315eb3579697ec1c9c152ad3f46be111"
+    }
+  }
+}

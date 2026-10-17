@@ -4,6 +4,8 @@
 
 Indicators that something MAY be wrong. Not bugs, but design problems that make code hard to understand, change, or test.
 
+**Scope:** refactor smells only in code you touch for the task. Report smells elsewhere as suggestions instead of changing them - unrequested refactors make the change harder to review and riskier to ship.
+
 ## The Six Categories
 
 ### 1. Bloaters
@@ -79,7 +81,7 @@ Code that hides what it does. These directly violate the Readability First princ
 | **Exposed mutable state** | Public `MutableStateFlow`/`MutableLiveData`/`MutableList` | Private backing property, read-only exposure |
 | **Lifecycle-unaware collection** | `lifecycleScope.launch { flow.collect {} }` without `repeatOnLifecycle` | `repeatOnLifecycle` / `collectAsStateWithLifecycle` |
 | **One-off event channels** | `Channel`/`SharedFlow` for navigation or messages the UI must not miss | Model as UI state + "consumed" event |
-| **Hardcoded dispatchers** | `withContext(Dispatchers.IO)` inside classes | Inject a `CoroutineDispatcher` |
+| **Hardcoded dispatchers** | `withContext(Dispatchers.IO)` hardcoded in a function body | Inject a `CoroutineDispatcher` through the constructor (a `Dispatchers.IO` default value is fine) |
 | **GlobalScope** | Work launched in `GlobalScope` | Injected scope |
 | **Swallowed cancellation** | `catch (e: Exception)` around suspend calls without rethrowing `CancellationException` | Catch specific exceptions |
 | **Main-thread I/O** | Disk or network work on the main thread | Main-safe data layer |

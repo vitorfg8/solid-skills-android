@@ -235,7 +235,7 @@ override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
 - **Never** collect UI flows with plain `launch`/`launchIn` - they keep running while the view is not visible
 - Don't override `onResume`/`onPause` for logic; use `repeatOnLifecycle` or a `DefaultLifecycleObserver`
 - With ViewBinding, clear the binding in `onDestroyView`
-- Obtain ViewModels with `by viewModels()`, `by activityViewModels()`, or `by navGraphViewModels(R.id.graph)` (or the DI library's equivalent). For Navigation 3 scoping, see the `navigation-3` skill.
+- Obtain ViewModels with `by viewModels()`, `by activityViewModels()`, or `by navGraphViewModels(R.id.graph)` (or the DI library's equivalent). For Navigation 3 scoping, check the current guidance (`android docs search navigation 3 viewmodel`) or a matching Android skill (`android skills find navigation`).
 
 ## Quick Reference
 

@@ -1,6 +1,6 @@
 # Testing Strategy
 
-> For installing or configuring test infrastructure (frameworks, runners, Robolectric, screenshot tools, coverage), use the `testing-setup` skill. This file covers how to design and write tests.
+> This file covers how to design and write tests. Installing or configuring test infrastructure (frameworks, runners, Robolectric, screenshot tools, coverage) is a platform workflow: use a matching Android skill if one is installed (`android skills find testing`), and confirm with the user before adding any library.
 
 > Based on the official guides: [Testing fundamentals](https://developer.android.com/training/testing/fundamentals), [What to test](https://developer.android.com/training/testing/fundamentals/what-to-test), [Test doubles](https://developer.android.com/training/testing/fundamentals/test-doubles), [Testing strategies](https://developer.android.com/training/testing/fundamentals/strategies), [Testing coroutines](https://developer.android.com/kotlin/coroutines/test), [Testing flows](https://developer.android.com/kotlin/flow/test).
 

@@ -10,9 +10,9 @@ Skills follow the [Agent Skills](https://github.com/anthropics/skills) format.
 
 Transform junior-level code into senior-engineer quality Android software. Designed for **Android + Kotlin** projects, with **Jetpack Compose** as the default UI toolkit and XML Views supported for legacy code.
 
-**Use when:**
+**Use when** working on Kotlin code in Android app modules:
 
-- Writing any code (features, fixes, utilities)
+- Writing features, fixes, and utilities
 - Refactoring existing code
 - Planning or designing architecture
 - Reviewing code quality
@@ -24,7 +24,7 @@ Transform junior-level code into senior-engineer quality Android software. Desig
 
 | Principle | Focus |
 |-----------|-------|
-| Readability First | Code written for humans, explicit about what it does |
+| Readability First | Code read by humans and agents with equal weight, explicit about what it does |
 | TDD | Red-Green-Refactor cycle, tests before code |
 | SOLID | Single Responsibility, Open/Closed, Liskov Substitution, Interface Segregation, Dependency Inversion |
 | Clean Code | Kotlin style guide, meaningful names, small functions, idiomatic Kotlin |
@@ -51,27 +51,28 @@ Transform junior-level code into senior-engineer quality Android software. Desig
 **Key features:**
 
 - Enforces TDD workflow (write failing test first)
-- Prioritizes human-readable, explicit code over clever code
+- Prioritizes readable, explicit code over clever code - for humans and agents alike
 - Follows the official Android and Kotlin guidance (style guide, architecture recommendations, Compose API guidelines)
 - Applies SOLID principles to every class and function
 - Uses value classes for domain primitives (IDs, emails, money)
 - Detects and fixes code smells, including Android- and Compose-specific ones
 - **Library neutral:** follows the libraries your project already uses (e.g. Koin or Hilt, SharedPreferences or DataStore) and asks you to choose when starting something new - it never silently adds or migrates a library
 
-## Use together with Android skills
+## Use with the Android CLI
 
-This skill is complementary to the official [Android skills](https://github.com/android/skills).
+This skill is **self-contained**: every rule works without any other tool or skill installed. It is complementary to the Android CLI (`android`) and the official [Android skills](https://github.com/android/skills):
 
-- **Android skills** cover specific workflows and platform APIs: test infrastructure, XML-to-Compose migration, adaptive layouts, Navigation 3, edge-to-edge, profiling, R8, security, and SDK integrations.
-- **This skill** covers the quality of the code those workflows produce: SOLID, TDD, readability, naming, and architecture boundaries.
+- **This skill** covers the quality of the code: SOLID, TDD, readability, naming, and architecture boundaries.
+- **The Android CLI and skills** cover platform workflows and current API guidance: test infrastructure, migrations, adaptive layouts, navigation, edge-to-edge, profiling, R8, security, and SDK integrations.
 
-Install the official skills with the Android CLI:
+When the `android` CLI is available, the agent uses it to stay current and to find workflow skills:
 
 ```bash
-android skills add --all
+android docs search "<keywords>"   # confirm the current official guidance for an API
+android skills find "<keyword>"    # find a workflow skill for a platform task
 ```
 
-When both apply, follow the Android skill for the platform-specific steps and this skill for how the resulting code is written. If an Android skill would add or replace a library, this skill still asks you first.
+When both apply, the Android skill drives the platform-specific steps and this skill drives how the resulting code is written. If an Android skill would add or replace a library, this skill still asks you first.
 
 ## Installation
 
