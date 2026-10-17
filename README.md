@@ -6,7 +6,7 @@ Skills follow the [Agent Skills](https://github.com/anthropics/skills) format.
 
 ## Available Skills
 
-### solid
+### solid-android
 
 Transform junior-level code into senior-engineer quality Android software. Designed for **Android + Kotlin** projects, with **Jetpack Compose** as the default UI toolkit and XML Views supported for legacy code.
 
@@ -96,7 +96,7 @@ Skills are automatically available once installed. The agent will use them when 
 
 ```
 skills/
-└── solid/
+└── solid-android/
     ├── SKILL.md           # Main skill instructions
     └── references/        # Supporting documentation
         ├── solid-principles.md

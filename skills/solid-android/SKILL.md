@@ -1,5 +1,5 @@
 ---
-name: solid
+name: solid-android
 description: Use when writing, reviewing, refactoring, testing, or designing Kotlin code in Android apps (ViewModels, repositories, use cases, Compose or Views UI, coroutines and Flow). Applies SOLID, TDD, readable Kotlin, and the official Android architecture.
 ---
 
