@@ -17,6 +17,8 @@ Use it for Kotlin code in Android app modules: writing features and fixes, refac
 - `android docs search <keywords>` - confirm the current official guidance for an API before using it
 - `android skills find <keyword>` - find a workflow skill (test setup, migrations, navigation, insets, profiling, R8, AGP upgrades, SDK integrations). If one is installed, follow its steps; the code it produces still follows this skill
 
+**Project rules:** if a project rule (`AGENTS.md`, `.cursor/rules`, `CLAUDE.md`, an internal style guide) conflicts with this skill, ask the user which one to follow (AskQuestion when available), showing both options. Never resolve the conflict silently.
+
 **Library policy - no library is mandatory; principles are:**
 1. **Existing project:** follow what `build.gradle(.kts)`, `libs.versions.toml`, and existing code already use. **Never introduce or migrate to a competing library** (Koin → Hilt, SharedPreferences → DataStore, LiveData → StateFlow, MockK → fakes only) unless the user asks.
 2. **No established choice:** ask the user (AskQuestion when available), marking the official recommendation. Never pick silently. This also applies when another skill would add or replace a library.
@@ -43,7 +45,7 @@ When this skill names a library, read it as "e.g.".
 - **In scope:** new or changed behavior in use cases, repositories, data sources, ViewModels, and other JVM-testable logic. For UI, test screen state and behavior
 - **Out of scope:** layout, styling, copy, or a one-line fix with no behavior change
 - **Debugging:** write the failing test first when the bug is expressible as behavior; don't block a fix on an unreproducible test
-- **Verify before finishing:** run the affected module's unit tests and lint - `./gradlew :<module>:testDebugUnitTest` (or `test`) and `./gradlew :<module>:lintDebug` (or `lint`). Fix failures you introduced
+- **Verify before finishing:** run the affected module's unit tests, Android lint, and any configured Kotlin linter (detekt, ktlint, spotless) - for the variant the change affects. Fix failures you introduced. See [references/tdd.md](references/tdd.md#verify-before-finishing) for the commands
 
 Open [references/tdd.md](references/tdd.md) for the TDD loop, the three laws, and test naming.
 
@@ -239,7 +241,7 @@ Open [references/testing.md](references/testing.md) when choosing test types, te
 ## Pre-Code Checklist
 
 1. [ ] Do I understand the requirement? (Write acceptance criteria first)
-2. [ ] Which libraries does the project already use? Do I need to ask the user?
+2. [ ] Which libraries and project rules apply? Do I need to ask the user about a choice or a conflict?
 3. [ ] What test will I write first?
 4. [ ] What is the simplest solution? Am I solving a real problem?
 
@@ -251,7 +253,7 @@ Open [references/testing.md](references/testing.md) when choosing test types, te
 
 ## Post-Code Checklist
 
-1. [ ] Do the module's unit tests and lint pass?
+1. [ ] Do the unit tests, lint, and configured linters pass for the affected variant?
 2. [ ] Is there dead code to remove or a condition to simplify?
 3. [ ] Would a developer or agent new to the codebase understand this after one read?
 4. [ ] Are strings in resources and interactive elements accessible?
@@ -271,7 +273,8 @@ Open [references/testing.md](references/testing.md) when choosing test types, te
 - `withContext(Dispatchers.IO)` hardcoded in a function body, `GlobalScope`, swallowed `CancellationException`
 - `!!` instead of handling nullability; state written during composition
 - Hardcoded or concatenated user-facing strings; interactive element without a 48dp target or label
-- Refactoring code outside the task; silently adding, replacing, or migrating a library
+- Refactoring code outside the task
+- Silently resolving a conflict with a project rule; silently adding, replacing, or migrating a library
 
 ## Remember
 

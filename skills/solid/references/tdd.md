@@ -10,12 +10,27 @@ Red-Green-Refactor is for **new or changed behavior**, not for every file touch.
 
 ## Verify Before Finishing
 
-Run the unit tests and lint of the module you changed, not only the new test:
+Run the unit tests, Android lint, and configured Kotlin linters of the module you changed - not only the new test.
 
-```bash
-./gradlew :<module>:testDebugUnitTest   # or ./gradlew :<module>:test
-./gradlew :<module>:lintDebug           # or ./gradlew :<module>:lint
-```
+**1. Detect flavors:** look for `productFlavors` in the module's `build.gradle(.kts)` (or its convention plugin), or list the tasks with `./gradlew :<module>:tasks --all`.
+
+**2. Choose the variant:**
+
+| Change | Unit tests | Android lint |
+|--------|------------|--------------|
+| Module without flavors | `./gradlew :<module>:testDebugUnitTest` | `./gradlew :<module>:lintDebug` |
+| Flavor source set (e.g. `src/prod/`) | `./gradlew :<module>:test<Flavor>DebugUnitTest` | `./gradlew :<module>:lint<Flavor>Debug` |
+| Common code (`src/main/`) in a module with flavors | `./gradlew :<module>:test` (all variants) | `./gradlew :<module>:lint` |
+
+**3. Run the Kotlin linters the project already configures** (plugin in `build.gradle(.kts)`, `libs.versions.toml`, or a convention plugin):
+
+| Linter | Task |
+|--------|------|
+| detekt | `./gradlew :<module>:detekt` |
+| ktlint | `./gradlew :<module>:ktlintCheck` |
+| Spotless | `./gradlew :<module>:spotlessCheck` |
+
+Skip linters that aren't configured; never install one to verify a change.
 
 Fix failures you introduced; report pre-existing failures instead of hiding them.
 
